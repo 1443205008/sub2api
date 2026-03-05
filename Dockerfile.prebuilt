@@ -1,0 +1,60 @@
+# =============================================================================
+# Sub2API Runtime Image (prebuilt binary)
+# =============================================================================
+# This Dockerfile only packages prebuilt artifacts produced by CI.
+# It does NOT build frontend/backend inside Docker.
+#
+# Required files in build context:
+# - .artifacts/sub2api-linux-amd64
+# - .artifacts/sub2api-linux-arm64
+# - backend/resources/
+# =============================================================================
+
+ARG ALPINE_IMAGE=alpine:3.21
+FROM ${ALPINE_IMAGE}
+
+ARG VERSION=
+ARG COMMIT=docker
+ARG DATE=
+ARG TARGETARCH
+
+LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
+LABEL description="Sub2API - AI API Gateway Platform"
+LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.revision="${COMMIT}"
+LABEL org.opencontainers.image.created="${DATE}"
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    && rm -rf /var/cache/apk/*
+
+RUN addgroup -g 1000 sub2api && \
+    adduser -u 1000 -G sub2api -s /bin/sh -D sub2api
+
+WORKDIR /app
+
+COPY .artifacts/sub2api-linux-amd64 /tmp/sub2api-linux-amd64
+COPY .artifacts/sub2api-linux-arm64 /tmp/sub2api-linux-arm64
+
+RUN case "${TARGETARCH}" in \
+      amd64) cp /tmp/sub2api-linux-amd64 /app/sub2api ;; \
+      arm64) cp /tmp/sub2api-linux-arm64 /app/sub2api ;; \
+      *) echo "unsupported TARGETARCH: ${TARGETARCH}" && exit 1 ;; \
+    esac && \
+    chmod +x /app/sub2api && \
+    rm -f /tmp/sub2api-linux-amd64 /tmp/sub2api-linux-arm64
+
+COPY backend/resources /app/resources
+
+RUN mkdir -p /app/data && chown -R sub2api:sub2api /app
+
+USER sub2api
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget -q -T 5 -O /dev/null http://localhost:${SERVER_PORT:-8080}/health || exit 1
+
+ENTRYPOINT ["/app/sub2api"]
