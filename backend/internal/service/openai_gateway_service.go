@@ -12,7 +12,6 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,7 +35,6 @@ const (
 	chatgptCodexURL = "https://chatgpt.com/backend-api/codex/responses"
 	// OpenAI Platform API for API Key accounts (fallback)
 	openaiPlatformAPIURL   = "https://api.openai.com/v1/responses"
-	openaiChatAPIURL       = "https://api.openai.com/v1/chat/completions"
 	openaiStickySessionTTL = time.Hour // 粘性会话TTL
 	codexCLIUserAgent      = "codex_cli_rs/0.104.0"
 	// codex_cli_only 拒绝时单个请求头日志长度上限（字符）
@@ -52,16 +50,6 @@ const (
 	openAIWSRetryBackoffMaxDefault     = 2 * time.Second
 	openAIWSRetryJitterRatioDefault    = 0.2
 )
-
-// OpenAIChatCompletionsBodyKey stores the original chat-completions payload in gin.Context.
-const OpenAIChatCompletionsBodyKey = "openai_chat_completions_body"
-
-// OpenAIChatCompletionsIncludeUsageKey stores stream_options.include_usage in gin.Context.
-const OpenAIChatCompletionsIncludeUsageKey = "openai_chat_completions_include_usage"
-
-// openaiSSEDataRe matches SSE data lines with optional whitespace after colon.
-// Some upstream APIs return non-standard "data:" without space (should be "data: ").
-var openaiSSEDataRe = regexp.MustCompile(`^data:\s*`)
 
 // OpenAI allowed headers whitelist (for non-passthrough).
 var openaiAllowedHeaders = map[string]bool{
@@ -104,19 +92,6 @@ var codexCLIOnlyDebugHeaderWhitelist = []string{
 	"X-Client-Request-ID",
 	"X-Forwarded-For",
 	"X-Real-IP",
-}
-
-// OpenAI chat-completions allowed headers (extend responses whitelist).
-var openaiChatAllowedHeaders = map[string]bool{
-	"accept-language":     true,
-	"content-type":        true,
-	"conversation_id":     true,
-	"user-agent":          true,
-	"originator":          true,
-	"session_id":          true,
-	"openai-organization": true,
-	"openai-project":      true,
-	"openai-beta":         true,
 }
 
 // OpenAICodexUsageSnapshot represents Codex API usage limits from response headers
@@ -1450,6 +1425,7 @@ func (s *OpenAIGatewayService) handleFailoverSideEffects(ctx context.Context, re
 // Forward forwards request to OpenAI API
 func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, account *Account, body []byte) (*OpenAIForwardResult, error) {
 	startTime := time.Now()
+	isChatCompletions := isOpenAIChatCompletionsRequest(c)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account)
 	apiKeyID := getAPIKeyIDFromContext(c)
@@ -1464,29 +1440,16 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		return nil, errors.New("codex_cli_only restriction: only codex official clients are allowed")
 	}
 
-	if c != nil && account != nil && account.Type == AccountTypeAPIKey {
-		if raw, ok := c.Get(OpenAIChatCompletionsBodyKey); ok {
-			if rawBody, ok := raw.([]byte); ok && len(rawBody) > 0 {
-				includeUsage := false
-				if v, ok := c.Get(OpenAIChatCompletionsIncludeUsageKey); ok {
-					if flag, ok := v.(bool); ok {
-						includeUsage = flag
-					}
-				}
-				if passthroughWriter, ok := c.Writer.(interface{ SetPassthrough() }); ok {
-					passthroughWriter.SetPassthrough()
-				}
-				return s.forwardChatCompletions(ctx, c, account, rawBody, includeUsage, startTime)
-			}
-		}
-	}
-
 	originalBody := body
 	reqModel, reqStream, promptCacheKey := extractOpenAIRequestMetaFromBody(body)
 	originalModel := reqModel
 
 	isCodexCLI := openai.IsCodexCLIRequest(c.GetHeader("User-Agent")) || (s.cfg != nil && s.cfg.Gateway.ForceCodexCLI)
 	wsDecision := s.getOpenAIWSProtocolResolver().Resolve(account)
+	if isChatCompletions {
+		// Chat Completions 仅走 HTTP，上游不复用 Responses WS 协议。
+		wsDecision = OpenAIWSProtocolDecision{Transport: OpenAIUpstreamTransportHTTPSSE, Reason: "chat_completions_http_only"}
+	}
 	clientTransport := GetOpenAIClientTransport(c)
 	// 仅允许 WS 入站请求走 WS 上游，避免出现 HTTP -> WS 协议混用。
 	wsDecision = resolveOpenAIWSDecisionByClientTransport(wsDecision, clientTransport)
@@ -1594,7 +1557,8 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 	}
 
 	// 非透传模式下，保持历史行为：非 Codex CLI 请求在 instructions 为空时注入默认指令。
-	if !isCodexCLI && isInstructionsEmpty(reqBody) {
+	// Chat Completions 协议不使用 instructions 字段，避免注入导致上游校验失败。
+	if !isChatCompletions && !isCodexCLI && isInstructionsEmpty(reqBody) {
 		if instructions := strings.TrimSpace(GetOpenCodeInstructions()); instructions != "" {
 			reqBody["instructions"] = instructions
 			bodyModified = true
@@ -1634,7 +1598,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 		}
 	}
 
-	if account.Type == AccountTypeOAuth {
+	if !isChatCompletions && account.Type == AccountTypeOAuth {
 		codexResult := applyCodexOAuthTransform(reqBody, isCodexCLI)
 		if codexResult.Modified {
 			bodyModified = true
@@ -1704,7 +1668,7 @@ func (s *OpenAIGatewayService) Forward(ctx context.Context, c *gin.Context, acco
 
 	// 仅在 WSv2 模式保留 previous_response_id，其他模式（HTTP/WSv1）统一过滤。
 	// 注意：该规则同样适用于 Codex CLI 请求，避免 WSv1 向上游透传不支持字段。
-	if wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
+	if !isChatCompletions && wsDecision.Transport != OpenAIUpstreamTransportResponsesWebsocketV2 {
 		if _, has := reqBody["previous_response_id"]; has {
 			delete(reqBody, "previous_response_id")
 			bodyModified = true
@@ -2598,26 +2562,42 @@ func writeOpenAIPassthroughResponseHeaders(dst http.Header, src http.Header, fil
 }
 
 func (s *OpenAIGatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Context, account *Account, body []byte, token string, isStream bool, promptCacheKey string, isCodexCLI bool) (*http.Request, error) {
+	isChatCompletions := isOpenAIChatCompletionsRequest(c)
 	// Determine target URL based on account type
 	var targetURL string
 	switch account.Type {
 	case AccountTypeOAuth:
+		if isChatCompletions {
+			return nil, errors.New("chat/completions is not supported for OAuth OpenAI accounts")
+		}
 		// OAuth accounts use ChatGPT internal API
 		targetURL = chatgptCodexURL
 	case AccountTypeAPIKey:
 		// API Key accounts use Platform API or custom base URL
 		baseURL := account.GetOpenAIBaseURL()
 		if baseURL == "" {
-			targetURL = openaiPlatformAPIURL
+			if isChatCompletions {
+				targetURL = "https://api.openai.com/v1/chat/completions"
+			} else {
+				targetURL = openaiPlatformAPIURL
+			}
 		} else {
 			validatedURL, err := s.validateUpstreamBaseURL(baseURL)
 			if err != nil {
 				return nil, err
 			}
-			targetURL = buildOpenAIResponsesURL(validatedURL)
+			if isChatCompletions {
+				targetURL = buildOpenAIChatCompletionsURL(validatedURL)
+			} else {
+				targetURL = buildOpenAIResponsesURL(validatedURL)
+			}
 		}
 	default:
-		targetURL = openaiPlatformAPIURL
+		if isChatCompletions {
+			targetURL = "https://api.openai.com/v1/chat/completions"
+		} else {
+			targetURL = openaiPlatformAPIURL
+		}
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", targetURL, bytes.NewReader(body))
@@ -3214,10 +3194,20 @@ func extractOpenAIUsageFromJSONBytes(body []byte) (OpenAIUsage, bool) {
 		"usage.input_tokens",
 		"usage.output_tokens",
 		"usage.input_tokens_details.cached_tokens",
+		"usage.prompt_tokens",
+		"usage.completion_tokens",
 	)
+	inputTokens := int(values[0].Int())
+	outputTokens := int(values[1].Int())
+	if inputTokens == 0 {
+		inputTokens = int(values[3].Int())
+	}
+	if outputTokens == 0 {
+		outputTokens = int(values[4].Int())
+	}
 	return OpenAIUsage{
-		InputTokens:          int(values[0].Int()),
-		OutputTokens:         int(values[1].Int()),
+		InputTokens:          inputTokens,
+		OutputTokens:         outputTokens,
 		CacheReadInputTokens: int(values[2].Int()),
 	}, true
 }
@@ -3391,6 +3381,29 @@ func buildOpenAIResponsesURL(base string) string {
 		return normalized + "/responses"
 	}
 	return normalized + "/v1/responses"
+}
+
+// buildOpenAIChatCompletionsURL 组装 OpenAI Chat Completions 端点。
+// - base 已是 /chat/completions：原样返回
+// - base 以 /v1 结尾：追加 /chat/completions
+// - 其他情况：追加 /v1/chat/completions
+func buildOpenAIChatCompletionsURL(base string) string {
+	normalized := strings.TrimRight(strings.TrimSpace(base), "/")
+	if strings.HasSuffix(normalized, "/chat/completions") {
+		return normalized
+	}
+	if strings.HasSuffix(normalized, "/v1") {
+		return normalized + "/chat/completions"
+	}
+	return normalized + "/v1/chat/completions"
+}
+
+func isOpenAIChatCompletionsRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	path := strings.TrimSpace(c.Request.URL.Path)
+	return strings.HasSuffix(path, "/chat/completions")
 }
 
 func (s *OpenAIGatewayService) replaceModelInResponseBody(body []byte, fromModel, toModel string) []byte {

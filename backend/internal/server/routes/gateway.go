@@ -47,8 +47,9 @@ func RegisterGatewayRoutes(
 		gateway.GET("/usage", h.Gateway.Usage)
 		// OpenAI Responses API
 		gateway.POST("/responses", h.OpenAIGateway.Responses)
-		// OpenAI Chat Completions API
-		gateway.POST("/chat/completions", h.OpenAIGateway.ChatCompletions)
+		gateway.GET("/responses", h.OpenAIGateway.ResponsesWebSocket)
+		// OpenAI Chat Completions 兼容入口（独立 Handler）
+		gateway.POST("/chat/completions", h.OpenAIGateway.Responses)
 	}
 
 	// Gemini 原生 API 兼容层（Gemini SDK/CLI 直连）
@@ -67,8 +68,6 @@ func RegisterGatewayRoutes(
 
 	// OpenAI Responses API（不带v1前缀的别名）
 	r.POST("/responses", bodyLimit, clientRequestID, opsErrorLogger, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.Responses)
-	// OpenAI Chat Completions API（不带v1前缀的别名）
-	r.POST("/chat/completions", bodyLimit, clientRequestID, opsErrorLogger, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.ChatCompletions)
 	r.GET("/responses", bodyLimit, clientRequestID, opsErrorLogger, gin.HandlerFunc(apiKeyAuth), requireGroupAnthropic, h.OpenAIGateway.ResponsesWebSocket)
 
 	// Antigravity 模型列表
