@@ -1,0 +1,129 @@
+name: "Docker Build & Push"
+
+on:
+  push:
+    branches:
+      - '**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read app version
+        id: app_version
+        run: |
+          VERSION=$(tr -d '\r\n' < backend/cmd/server/VERSION)
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve build strategy
+        id: build_strategy
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] || [ "${GITHUB_REF_NAME}" = "main" ] || [ "${GITHUB_REF_NAME}" = "master" ]; then
+            echo "platforms=linux/amd64,linux/arm64" >> "$GITHUB_OUTPUT"
+            echo "multiarch=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "platforms=linux/amd64" >> "$GITHUB_OUTPUT"
+            echo "multiarch=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up QEMU
+        if: steps.build_strategy.outputs.multiarch == 'true'
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache: true
+
+      - name: Verify Go version
+        run: |
+          go version | grep -q 'go1.25.7'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build frontend dist
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm run build
+        working-directory: frontend
+
+      - name: Build backend binaries (amd64/arm64)
+        working-directory: backend
+        run: |
+          mkdir -p ../.artifacts
+          VERSION="${{ steps.app_version.outputs.version }}"
+          COMMIT="${{ github.sha }}"
+          DATE="${{ github.event.head_commit.timestamp }}"
+          if [ -z "${DATE}" ]; then DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ); fi
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -tags embed \
+            -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.Date=${DATE} -X main.BuildType=release" \
+            -trimpath \
+            -o ../.artifacts/sub2api-linux-amd64 \
+            ./cmd/server
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build \
+            -tags embed \
+            -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.Date=${DATE} -X main.BuildType=release" \
+            -trimpath \
+            -o ../.artifacts/sub2api-linux-arm64 \
+            ./cmd/server
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: godsama/sub2api
+          tags: |
+            type=raw,value=latest
+            type=raw,value=v${{ steps.app_version.outputs.version }}
+            type=raw,value=${{ steps.app_version.outputs.version }}
+            type=sha,format=short,prefix=sha-
+            type=ref,event=branch
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.prebuilt
+          push: true
+          platforms: ${{ steps.build_strategy.outputs.platforms }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.version=${{ steps.app_version.outputs.version }}
+          build-args: |
+            VERSION=${{ steps.app_version.outputs.version }}
+            COMMIT=${{ github.sha }}
+            DATE=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha,scope=sub2api-docker
+          cache-to: type=gha,scope=sub2api-docker,mode=min
