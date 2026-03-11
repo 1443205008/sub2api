@@ -1,0 +1,55 @@
+# =============================================================================
+# Sub2API Prebuilt Dockerfile (for CI buildx)
+# =============================================================================
+# This Dockerfile packages pre-built binaries from .artifacts for multi-arch images.
+# It expects:
+#   .artifacts/sub2api-linux-amd64
+#   .artifacts/sub2api-linux-arm64
+# =============================================================================
+
+ARG ALPINE_IMAGE=alpine:3.21
+
+FROM ${ALPINE_IMAGE}
+
+ARG VERSION=
+ARG COMMIT=docker
+ARG DATE
+ARG TARGETARCH
+
+LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
+LABEL description="Sub2API - AI API Gateway Platform"
+LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.revision="${COMMIT}"
+LABEL org.opencontainers.image.created="${DATE}"
+
+# Install runtime dependencies
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+# Create non-root user
+RUN addgroup -g 1000 sub2api && \
+    adduser -u 1000 -G sub2api -s /bin/sh -D sub2api
+
+WORKDIR /app
+
+# Copy resources and pre-built binary
+COPY backend/resources /app/resources
+COPY .artifacts/sub2api-linux-${TARGETARCH} /app/sub2api
+
+# Ensure permissions
+RUN chmod +x /app/sub2api && \
+    mkdir -p /app/data && \
+    chown -R sub2api:sub2api /app
+
+USER sub2api
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${SERVER_PORT:-8080}/health || exit 1
+
+ENTRYPOINT ["/app/sub2api"]
