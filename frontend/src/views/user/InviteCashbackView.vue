@@ -47,14 +47,14 @@
           <iframe :src="inviteUrl" class="purchase-embed-frame" allowfullscreen></iframe>
         </div>
 
-        <div v-else class="h-full overflow-y-auto p-6">
+        <div v-else class="h-full overflow-y-auto p-4 sm:p-6">
           <div class="mx-auto max-w-4xl space-y-6">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('profile.invite.title') }}</h2>
                 <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">{{ t('profile.invite.description') }}</p>
               </div>
-              <button class="btn btn-primary" :disabled="overviewLoading || generatingInviteCode" @click="handleGenerateInviteCode">
+              <button class="btn btn-primary w-full justify-center sm:w-auto" :disabled="overviewLoading || generatingInviteCode" @click="handleGenerateInviteCode">
                 <span v-if="generatingInviteCode">{{ t('profile.invite.generating') }}</span>
                 <span v-else>{{ t('profile.invite.generateCode') }}</span>
               </button>
@@ -65,7 +65,7 @@
             </div>
 
             <template v-else>
-              <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4">
                 <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
                   <div class="text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.invitedUsers') }}</div>
                   <div class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ invitedUsers }}</div>
@@ -74,7 +74,7 @@
                   <div class="text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.cashbackRate') }}</div>
                   <div class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ cashbackRate }}</div>
                 </div>
-                <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-800">
+                <div class="col-span-2 rounded-xl bg-gray-50 p-4 sm:col-span-1 dark:bg-dark-800">
                   <div class="text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.totalCashback') }}</div>
                   <div class="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{{ formatCurrency(totalCashback) }}</div>
                 </div>
@@ -83,19 +83,19 @@
               <div class="rounded-2xl border border-gray-200 p-5 dark:border-dark-700">
                 <div class="text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.latestCode') }}</div>
                 <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <code class="inline-flex min-h-[2.5rem] items-center rounded-lg bg-gray-100 px-3 py-2 font-mono text-sm text-gray-900 dark:bg-dark-800 dark:text-white">
+                  <code class="inline-flex min-h-[2.5rem] items-center rounded-lg bg-gray-100 px-3 py-2 font-mono text-sm text-gray-900 break-all dark:bg-dark-800 dark:text-white">
                     {{ latestInviteCode || t('profile.invite.noCode') }}
                   </code>
-                  <button class="btn btn-secondary" :disabled="!latestInviteCode" @click="copyInviteCode">
+                  <button class="btn btn-secondary w-full justify-center sm:w-auto" :disabled="!latestInviteCode" @click="copyInviteCode">
                     {{ t('profile.invite.copyCode') }}
                   </button>
                 </div>
                 <div class="mt-4 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.inviteLink') }}</div>
                 <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <code class="inline-flex min-h-[2.5rem] flex-1 items-center overflow-x-auto rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-900 dark:bg-dark-800 dark:text-white">
+                  <code class="inline-flex min-h-[2.5rem] flex-1 items-center overflow-x-auto rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-900 break-all dark:bg-dark-800 dark:text-white">
                     {{ inviteLink || t('profile.invite.noLink') }}
                   </code>
-                  <button class="btn btn-secondary" :disabled="!inviteLink" @click="copyInviteLink">
+                  <button class="btn btn-secondary w-full justify-center sm:w-auto" :disabled="!inviteLink" @click="copyInviteLink">
                     {{ t('profile.invite.copyLink') }}
                   </button>
                 </div>
@@ -103,58 +103,59 @@
               </div>
 
               <div class="rounded-2xl border border-gray-200 p-5 dark:border-dark-700">
-                <div class="flex flex-col gap-4">
-                  <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+                <div class="rounded-xl bg-gray-50/80 p-3 sm:p-4 dark:bg-dark-800/60">
+                  <div class="flex flex-col gap-4">
+                    <div class="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
+                      <div>
+                        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
+                          {{ t('profile.invite.recordsTitle') }}
+                        </h3>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
+                          {{ t('profile.invite.recordsDescription') }}
+                        </p>
+                      </div>
+                      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:min-w-[520px] xl:grid-cols-4">
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.recordStatus') }}</div>
+                          <Select
+                            v-model="recordFilters.status"
+                            :options="recordStatusOptions"
+                            @change="handleInviteRecordFilterChange"
+                          />
+                        </div>
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.recordSort') }}</div>
+                          <Select
+                            v-model="recordFilters.sort"
+                            :options="recordSortOptions"
+                            @change="handleInviteRecordFilterChange"
+                          />
+                        </div>
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.dateFrom') }}</div>
+                          <input
+                            v-model="recordFilters.date_from"
+                            type="date"
+                            class="input"
+                            @change="handleInviteRecordFilterChange"
+                          />
+                        </div>
+                        <div>
+                          <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.dateTo') }}</div>
+                          <input
+                            v-model="recordFilters.date_to"
+                            type="date"
+                            class="input"
+                            @change="handleInviteRecordFilterChange"
+                          />
+                        </div>
+                      </div>
+                    </div>
                     <div>
-                      <h3 class="text-sm font-semibold text-gray-900 dark:text-white">
-                        {{ t('profile.invite.recordsTitle') }}
-                      </h3>
-                      <p class="mt-1 text-xs text-gray-500 dark:text-dark-400">
-                        {{ t('profile.invite.recordsDescription') }}
-                      </p>
+                      <button class="btn btn-secondary btn-sm w-full justify-center sm:w-auto" @click="resetInviteRecordFilters">
+                        {{ t('profile.invite.resetFilters') }}
+                      </button>
                     </div>
-                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:min-w-[520px] lg:grid-cols-4">
-                      <div>
-                        <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.recordStatus') }}</div>
-                        <Select
-                          v-model="recordFilters.status"
-                          :options="recordStatusOptions"
-                          @change="handleInviteRecordFilterChange"
-                        />
-                      </div>
-                      <div>
-                        <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.recordSort') }}</div>
-                        <Select
-                          v-model="recordFilters.sort"
-                          :options="recordSortOptions"
-                          @change="handleInviteRecordFilterChange"
-                        />
-                      </div>
-                      <div>
-                        <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.dateFrom') }}</div>
-                        <input
-                          v-model="recordFilters.date_from"
-                          type="date"
-                          class="input"
-                          @change="handleInviteRecordFilterChange"
-                        />
-                      </div>
-                      <div>
-                        <div class="mb-1 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.dateTo') }}</div>
-                        <input
-                          v-model="recordFilters.date_to"
-                          type="date"
-                          class="input"
-                          @change="handleInviteRecordFilterChange"
-                        />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <button class="btn btn-secondary btn-sm" @click="resetInviteRecordFilters">
-                      {{ t('profile.invite.resetFilters') }}
-                    </button>
                   </div>
                 </div>
 
@@ -166,7 +167,7 @@
                   <div
                     v-for="record in inviteRecords"
                     :key="record.invited_user_id"
-                    class="rounded-xl border border-gray-100 p-4 dark:border-dark-700"
+                    class="rounded-xl border border-gray-100 p-3.5 sm:p-4 dark:border-dark-700"
                   >
                     <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
@@ -189,7 +190,7 @@
                       </span>
                     </div>
 
-                    <div class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
+                    <div class="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
                       <div>
                         <div class="text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.registeredAt') }}</div>
                         <div class="mt-1 text-gray-900 dark:text-white">{{ formatInviteDate(record.registered_at || record.invite_used_at) }}</div>
@@ -450,7 +451,13 @@ const formatCurrency = (v: number) => `$${v.toFixed(2)}`
 <style scoped>
 .invite-page-layout {
   @apply flex flex-col;
-  height: calc(100vh - 64px - 4rem);
+  min-height: calc(100dvh - 64px - 4rem);
+}
+
+@media (min-width: 768px) {
+  .invite-page-layout {
+    height: calc(100vh - 64px - 4rem);
+  }
 }
 
 .purchase-embed-shell {

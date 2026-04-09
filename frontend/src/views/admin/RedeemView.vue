@@ -171,8 +171,8 @@
       </template>
     </TablePageLayout>
 
-    <div class="card mt-6">
-      <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+    <div class="card mt-4 sm:mt-6">
+      <div class="border-b border-gray-100 px-4 py-4 sm:px-6 dark:border-dark-700">
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
           {{ t('admin.redeem.inviteRankingTitle') }}
         </h2>
@@ -180,72 +180,100 @@
           {{ t('admin.redeem.inviteRankingDescription') }}
         </p>
       </div>
-      <div class="space-y-4 p-6">
-        <div class="flex flex-wrap items-center gap-3">
-          <div class="flex-1 sm:max-w-64">
-            <input
-              v-model="inviteRankingFilters.search"
-              type="text"
-              :placeholder="t('admin.redeem.inviteRankingSearch')"
-              class="input"
-              @input="handleInviteRankingSearch"
-            />
+      <div class="space-y-4 p-4 sm:p-6">
+        <div class="rounded-xl bg-gray-50/80 p-3 sm:p-4 dark:bg-dark-800/60">
+          <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <div class="w-full sm:max-w-64 sm:flex-1">
+              <div class="mb-1 text-xs text-gray-500 dark:text-dark-400 sm:hidden">
+                {{ t('admin.redeem.inviteRankingSearch') }}
+              </div>
+              <input
+                v-model="inviteRankingFilters.search"
+                type="text"
+                :placeholder="t('admin.redeem.inviteRankingSearch')"
+                class="input"
+                @input="handleInviteRankingSearch"
+              />
+            </div>
+            <div class="grid grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:items-center">
+              <div class="w-full sm:w-40">
+                <div class="mb-1 text-xs text-gray-500 dark:text-dark-400 sm:hidden">
+                  {{ t('profile.invite.recordStatus') }}
+                </div>
+                <Select
+                  v-model="inviteRankingFilters.status"
+                  :options="inviteRankingStatusOptions"
+                  @change="handleInviteRankingFilterChange"
+                />
+              </div>
+              <div class="w-full sm:w-52">
+                <div class="mb-1 text-xs text-gray-500 dark:text-dark-400 sm:hidden">
+                  {{ t('profile.invite.recordSort') }}
+                </div>
+                <Select
+                  v-model="inviteRankingFilters.sort"
+                  :options="inviteRankingSortOptions"
+                  @change="handleInviteRankingFilterChange"
+                />
+              </div>
+              <button
+                @click="loadInviteRanking"
+                :disabled="inviteRankingLoading"
+                class="btn btn-secondary w-full justify-center sm:w-auto"
+              >
+                <Icon name="refresh" size="md" :class="inviteRankingLoading ? 'animate-spin' : ''" />
+                <span class="ml-2 sm:hidden">{{ t('common.refresh') }}</span>
+              </button>
+            </div>
           </div>
-          <Select
-            v-model="inviteRankingFilters.status"
-            :options="inviteRankingStatusOptions"
-            class="w-40"
-            @change="handleInviteRankingFilterChange"
-          />
-          <Select
-            v-model="inviteRankingFilters.sort"
-            :options="inviteRankingSortOptions"
-            class="w-52"
-            @change="handleInviteRankingFilterChange"
-          />
-          <button @click="loadInviteRanking" :disabled="inviteRankingLoading" class="btn btn-secondary">
-            <Icon name="refresh" size="md" :class="inviteRankingLoading ? 'animate-spin' : ''" />
-          </button>
         </div>
 
-        <DataTable :columns="inviteRankingColumns" :data="inviteRankingRows" :loading="inviteRankingLoading">
-          <template #cell-rank="{ value }">
-            <span class="font-medium text-gray-900 dark:text-white">#{{ value }}</span>
-          </template>
-
-          <template #cell-inviter_email="{ row }">
-            <div class="flex flex-col">
-              <span class="font-medium text-gray-900 dark:text-white">{{ row.inviter_email || '-' }}</span>
-              <span class="text-xs text-gray-500 dark:text-dark-400">
-                {{ row.inviter_username || t('admin.redeem.userPrefix', { id: row.inviter_user_id }) }}
+        <div class="rounded-xl border border-gray-100 dark:border-dark-700">
+          <DataTable :columns="inviteRankingColumns" :data="inviteRankingRows" :loading="inviteRankingLoading">
+            <template #cell-rank="{ value }">
+              <span class="inline-flex min-w-[2.25rem] justify-center rounded-full bg-primary-50 px-2 py-1 text-sm font-semibold text-primary-700 dark:bg-primary-900/30 dark:text-primary-300">
+                #{{ value }}
               </span>
-            </div>
-          </template>
+            </template>
 
-          <template #cell-total_cashback="{ value }">
-            <span class="font-medium text-emerald-600 dark:text-emerald-400">${{ Number(value || 0).toFixed(2) }}</span>
-          </template>
+            <template #cell-inviter_email="{ row }">
+              <div class="flex min-w-0 flex-col">
+                <span class="truncate font-medium text-gray-900 dark:text-white">{{ row.inviter_email || '-' }}</span>
+                <span class="truncate text-xs text-gray-500 dark:text-dark-400">
+                  {{ row.inviter_username || t('admin.redeem.userPrefix', { id: row.inviter_user_id }) }}
+                </span>
+              </div>
+            </template>
 
-          <template #cell-cashback_count="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
-          </template>
+            <template #cell-invited_users="{ value }">
+              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+            </template>
 
-          <template #cell-last_invite_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">{{ value ? formatDateTime(value) : '-' }}</span>
-          </template>
+            <template #cell-total_cashback="{ value }">
+              <span class="font-medium text-emerald-600 dark:text-emerald-400">${{ Number(value || 0).toFixed(2) }}</span>
+            </template>
 
-          <template #cell-last_cashback_at="{ value }">
-            <span class="text-sm text-gray-500 dark:text-dark-400">
-              {{ value ? formatDateTime(value) : t('admin.redeem.noCashbackYet') }}
-            </span>
-          </template>
+            <template #cell-cashback_count="{ value }">
+              <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
+            </template>
 
-          <template #empty>
-            <div class="py-12 text-center text-sm text-gray-500 dark:text-dark-400">
-              {{ t('admin.redeem.noInviteRanking') }}
-            </div>
-          </template>
-        </DataTable>
+            <template #cell-last_invite_at="{ value }">
+              <span class="text-sm text-gray-500 dark:text-dark-400">{{ value ? formatDateTime(value) : '-' }}</span>
+            </template>
+
+            <template #cell-last_cashback_at="{ value }">
+              <span class="text-sm text-gray-500 dark:text-dark-400">
+                {{ value ? formatDateTime(value) : t('admin.redeem.noCashbackYet') }}
+              </span>
+            </template>
+
+            <template #empty>
+              <div class="py-12 text-center text-sm text-gray-500 dark:text-dark-400">
+                {{ t('admin.redeem.noInviteRanking') }}
+              </div>
+            </template>
+          </DataTable>
+        </div>
 
         <Pagination
           v-if="inviteRankingPagination.total > 0"
