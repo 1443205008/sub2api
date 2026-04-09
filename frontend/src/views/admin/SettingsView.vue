@@ -827,6 +827,21 @@
               <Toggle v-model="form.registration_verify_code_enabled" />
             </div>
 
+            <!-- Registration Image Captcha -->
+            <div
+              class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+            >
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.registration.registrationImageCaptcha')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.registration.registrationImageCaptchaHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.registration_image_captcha_enabled" />
+            </div>
+
             <!-- Email Suffix Whitelist -->
             <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
               <label class="font-medium text-gray-900 dark:text-white">{{
@@ -2276,6 +2291,7 @@ const form = reactive<SettingsForm>({
   registration_enabled: true,
   email_verify_enabled: false,
   registration_verify_code_enabled: false,
+  registration_image_captcha_enabled: false,
   single_ip_registration_limit_enabled: false,
   registration_email_suffix_whitelist: [],
   promo_code_enabled: true,
@@ -2614,6 +2630,7 @@ async function saveSettings() {
       registration_enabled: form.registration_enabled,
       email_verify_enabled: form.email_verify_enabled,
       registration_verify_code_enabled: form.registration_verify_code_enabled,
+      registration_image_captcha_enabled: form.registration_image_captcha_enabled,
       single_ip_registration_limit_enabled: form.single_ip_registration_limit_enabled,
       registration_email_suffix_whitelist: registrationEmailSuffixWhitelistTags.value.map(
         (suffix) => `@${suffix}`

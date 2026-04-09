@@ -200,6 +200,53 @@
           </transition>
         </div>
 
+        <!-- Registration Image Captcha -->
+        <div v-if="registrationImageCaptchaEnabled">
+          <label for="captcha_code" class="input-label">
+            {{ t('auth.imageCaptchaLabel') }}
+          </label>
+          <div class="space-y-3">
+            <div class="flex items-center gap-3">
+              <div class="flex h-14 min-w-[132px] items-center justify-center overflow-hidden rounded-lg border border-gray-200 bg-white dark:border-dark-600 dark:bg-dark-800">
+                <div v-if="registrationCaptchaLoading" class="h-5 w-5 animate-spin rounded-full border-2 border-primary-500 border-t-transparent"></div>
+                <img
+                  v-else-if="registrationCaptchaImage"
+                  :src="registrationCaptchaImage"
+                  :alt="t('auth.imageCaptchaLabel')"
+                  class="h-full w-full object-cover"
+                />
+                <span v-else class="text-xs text-gray-400 dark:text-dark-500">
+                  {{ t('auth.imageCaptchaLoadFailed') }}
+                </span>
+              </div>
+              <button
+                type="button"
+                class="btn btn-secondary"
+                :disabled="isLoading || registrationCaptchaLoading"
+                @click="refreshRegistrationCaptcha"
+              >
+                <Icon name="refresh" size="md" :class="registrationCaptchaLoading ? 'animate-spin' : ''" />
+              </button>
+            </div>
+            <input
+              id="captcha_code"
+              v-model="formData.captcha_code"
+              type="text"
+              :disabled="isLoading"
+              class="input"
+              :class="{ 'input-error': errors.captcha_code }"
+              :placeholder="t('auth.imageCaptchaPlaceholder')"
+              autocomplete="off"
+            />
+            <p v-if="errors.captcha_code" class="input-error-text">
+              {{ errors.captcha_code }}
+            </p>
+            <p v-else class="input-hint">
+              {{ t('auth.imageCaptchaHint') }}
+            </p>
+          </div>
+        </div>
+
         <!-- Turnstile Widget -->
         <div v-if="turnstileEnabled && turnstileSiteKey">
           <TurnstileWidget
@@ -293,7 +340,7 @@ import LinuxDoOAuthSection from '@/components/auth/LinuxDoOAuthSection.vue'
 import Icon from '@/components/icons/Icon.vue'
 import TurnstileWidget from '@/components/TurnstileWidget.vue'
 import { useAuthStore, useAppStore } from '@/stores'
-import { getPublicSettings, validatePromoCode, validateInvitationCode } from '@/api/auth'
+import { getPublicSettings, getRegistrationCaptcha, validatePromoCode, validateInvitationCode } from '@/api/auth'
 import { buildAuthErrorMessage } from '@/utils/authError'
 import {
   isRegistrationEmailSuffixAllowed,
@@ -319,6 +366,7 @@ const showPassword = ref<boolean>(false)
 // Public settings
 const registrationEnabled = ref<boolean>(true)
 const registrationVerifyCodeEnabled = ref<boolean>(false)
+const registrationImageCaptchaEnabled = ref<boolean>(false)
 const promoCodeEnabled = ref<boolean>(true)
 const invitationCodeEnabled = ref<boolean>(false)
 const turnstileEnabled = ref<boolean>(false)
@@ -330,6 +378,9 @@ const registrationEmailSuffixWhitelist = ref<string[]>([])
 // Turnstile
 const turnstileRef = ref<InstanceType<typeof TurnstileWidget> | null>(null)
 const turnstileToken = ref<string>('')
+const registrationCaptchaLoading = ref<boolean>(false)
+const registrationCaptchaImage = ref<string>('')
+const registrationCaptchaID = ref<string>('')
 
 // Promo code validation
 const promoValidating = ref<boolean>(false)
@@ -354,12 +405,14 @@ const formData = reactive({
   email: '',
   password: '',
   promo_code: '',
-  invitation_code: ''
+  invitation_code: '',
+  captcha_code: ''
 })
 
 const errors = reactive({
   email: '',
   password: '',
+  captcha_code: '',
   turnstile: '',
   invitation_code: ''
 })
@@ -371,6 +424,7 @@ onMounted(async () => {
     const settings = await getPublicSettings()
     registrationEnabled.value = settings.registration_enabled
     registrationVerifyCodeEnabled.value = settings.registration_verify_code_enabled
+    registrationImageCaptchaEnabled.value = settings.registration_image_captcha_enabled
     promoCodeEnabled.value = settings.promo_code_enabled
     invitationCodeEnabled.value = settings.invitation_code_enabled
     turnstileEnabled.value = settings.turnstile_enabled
@@ -395,6 +449,9 @@ onMounted(async () => {
     if (invitationParam) {
       formData.invitation_code = invitationParam
       await validateInvitationCodeDebounced(invitationParam)
+    }
+    if (registrationImageCaptchaEnabled.value) {
+      await refreshRegistrationCaptcha()
     }
   } catch (error) {
     console.error('Failed to load public settings:', error)
@@ -549,6 +606,29 @@ function getInvitationErrorMessage(errorCode?: string): string {
   }
 }
 
+// ==================== Registration Image Captcha ====================
+
+async function refreshRegistrationCaptcha(): Promise<void> {
+  if (!registrationImageCaptchaEnabled.value) return
+
+  registrationCaptchaLoading.value = true
+  errors.captcha_code = ''
+
+  try {
+    const captcha = await getRegistrationCaptcha()
+    registrationCaptchaID.value = captcha.captcha_id
+    registrationCaptchaImage.value = captcha.image_data
+    formData.captcha_code = ''
+  } catch (error) {
+    console.error('Failed to load registration captcha:', error)
+    registrationCaptchaID.value = ''
+    registrationCaptchaImage.value = ''
+    appStore.showError(t('auth.imageCaptchaLoadFailed'))
+  } finally {
+    registrationCaptchaLoading.value = false
+  }
+}
+
 // ==================== Turnstile Handlers ====================
 
 function onTurnstileVerify(token: string): void {
@@ -590,6 +670,7 @@ function validateForm(): boolean {
   // Reset errors
   errors.email = ''
   errors.password = ''
+  errors.captcha_code = ''
   errors.turnstile = ''
   errors.invitation_code = ''
 
@@ -622,6 +703,16 @@ function validateForm(): boolean {
   if (invitationCodeEnabled.value) {
     if (!formData.invitation_code.trim()) {
       errors.invitation_code = t('auth.invitationCodeRequired')
+      isValid = false
+    }
+  }
+
+  if (registrationImageCaptchaEnabled.value) {
+    if (!registrationCaptchaID.value) {
+      errors.captcha_code = t('auth.imageCaptchaLoadFailed')
+      isValid = false
+    } else if (!formData.captcha_code.trim()) {
+      errors.captcha_code = t('auth.imageCaptchaRequired')
       isValid = false
     }
   }
@@ -696,6 +787,8 @@ async function handleRegister(): Promise<void> {
         JSON.stringify({
           email: formData.email,
           password: formData.password,
+          captcha_id: registrationCaptchaID.value || undefined,
+          captcha_code: formData.captcha_code || undefined,
           turnstile_token: turnstileToken.value,
           promo_code: formData.promo_code || undefined,
           invitation_code: formData.invitation_code || undefined
@@ -711,6 +804,8 @@ async function handleRegister(): Promise<void> {
     await authStore.register({
       email: formData.email,
       password: formData.password,
+      captcha_id: registrationCaptchaID.value || undefined,
+      captcha_code: formData.captcha_code || undefined,
       turnstile_token: turnstileEnabled.value ? turnstileToken.value : undefined,
       promo_code: formData.promo_code || undefined,
       invitation_code: formData.invitation_code || undefined
@@ -726,6 +821,9 @@ async function handleRegister(): Promise<void> {
     if (turnstileRef.value) {
       turnstileRef.value.reset()
       turnstileToken.value = ''
+    }
+    if (registrationImageCaptchaEnabled.value) {
+      void refreshRegistrationCaptcha()
     }
 
     // Handle registration error

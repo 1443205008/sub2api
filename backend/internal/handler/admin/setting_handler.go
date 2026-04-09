@@ -76,6 +76,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		RegistrationEnabled:                  settings.RegistrationEnabled,
 		EmailVerifyEnabled:                   settings.EmailVerifyEnabled,
 		RegistrationVerifyCodeEnabled:        settings.RegistrationVerifyCodeEnabled,
+		RegistrationImageCaptchaEnabled:      settings.RegistrationImageCaptchaEnabled,
 		SingleIPRegistrationLimitEnabled:     settings.SingleIPRegistrationLimitEnabled,
 		RegistrationEmailSuffixWhitelist:     settings.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                     settings.PromoCodeEnabled,
@@ -142,6 +143,7 @@ type UpdateSettingsRequest struct {
 	RegistrationEnabled              bool     `json:"registration_enabled"`
 	EmailVerifyEnabled               bool     `json:"email_verify_enabled"`
 	RegistrationVerifyCodeEnabled    bool     `json:"registration_verify_code_enabled"`
+	RegistrationImageCaptchaEnabled  bool     `json:"registration_image_captcha_enabled"`
 	SingleIPRegistrationLimitEnabled bool     `json:"single_ip_registration_limit_enabled"`
 	RegistrationEmailSuffixWhitelist []string `json:"registration_email_suffix_whitelist"`
 	PromoCodeEnabled                 bool     `json:"promo_code_enabled"`
@@ -566,6 +568,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		RegistrationEnabled:              req.RegistrationEnabled,
 		EmailVerifyEnabled:               req.EmailVerifyEnabled,
 		RegistrationVerifyCodeEnabled:    req.RegistrationVerifyCodeEnabled,
+		RegistrationImageCaptchaEnabled:  req.RegistrationImageCaptchaEnabled,
 		SingleIPRegistrationLimitEnabled: req.SingleIPRegistrationLimitEnabled,
 		RegistrationEmailSuffixWhitelist: req.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                 req.PromoCodeEnabled,
@@ -679,6 +682,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		RegistrationEnabled:                  updatedSettings.RegistrationEnabled,
 		EmailVerifyEnabled:                   updatedSettings.EmailVerifyEnabled,
 		RegistrationVerifyCodeEnabled:        updatedSettings.RegistrationVerifyCodeEnabled,
+		RegistrationImageCaptchaEnabled:      updatedSettings.RegistrationImageCaptchaEnabled,
 		SingleIPRegistrationLimitEnabled:     updatedSettings.SingleIPRegistrationLimitEnabled,
 		RegistrationEmailSuffixWhitelist:     updatedSettings.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                     updatedSettings.PromoCodeEnabled,
@@ -769,6 +773,9 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.RegistrationVerifyCodeEnabled != after.RegistrationVerifyCodeEnabled {
 		changed = append(changed, "registration_verify_code_enabled")
+	}
+	if before.RegistrationImageCaptchaEnabled != after.RegistrationImageCaptchaEnabled {
+		changed = append(changed, "registration_image_captcha_enabled")
 	}
 	if before.SingleIPRegistrationLimitEnabled != after.SingleIPRegistrationLimitEnabled {
 		changed = append(changed, "single_ip_registration_limit_enabled")

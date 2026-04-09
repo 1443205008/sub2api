@@ -204,6 +204,8 @@ let countdownTimer: ReturnType<typeof setInterval> | null = null
 // Registration data from sessionStorage
 const email = ref<string>('')
 const password = ref<string>('')
+const captchaID = ref<string>('')
+const captchaCode = ref<string>('')
 const initialTurnstileToken = ref<string>('')
 const promoCode = ref<string>('')
 const invitationCode = ref<string>('')
@@ -235,6 +237,8 @@ onMounted(async () => {
       const registerData = JSON.parse(registerDataStr)
       email.value = registerData.email || ''
       password.value = registerData.password || ''
+      captchaID.value = registerData.captcha_id || ''
+      captchaCode.value = registerData.captcha_code || ''
       initialTurnstileToken.value = registerData.turnstile_token || ''
       promoCode.value = registerData.promo_code || ''
       invitationCode.value = registerData.invitation_code || ''
@@ -399,6 +403,8 @@ async function handleVerify(): Promise<void> {
     await authStore.register({
       email: email.value,
       password: password.value,
+      captcha_id: captchaID.value || undefined,
+      captcha_code: captchaCode.value || undefined,
       verify_code: verifyCode.value.trim(),
       turnstile_token: initialTurnstileToken.value || undefined,
       promo_code: promoCode.value || undefined,

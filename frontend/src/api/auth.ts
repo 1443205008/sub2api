@@ -186,6 +186,12 @@ export interface RefreshTokenResponse {
   token_type: string
 }
 
+export interface RegistrationCaptchaResponse {
+  captcha_id: string
+  image_data: string
+  expires_in: number
+}
+
 /**
  * Refresh the access token using the refresh token
  * @returns New token pair
@@ -214,6 +220,14 @@ export async function refreshToken(): Promise<RefreshTokenResponse> {
  */
 export async function revokeAllSessions(): Promise<{ message: string }> {
   const { data } = await apiClient.post<{ message: string }>('/auth/revoke-all-sessions')
+  return data
+}
+
+/**
+ * Fetch registration image captcha
+ */
+export async function getRegistrationCaptcha(): Promise<RegistrationCaptchaResponse> {
+  const { data } = await apiClient.get<RegistrationCaptchaResponse>('/auth/registration-captcha')
   return data
 }
 
@@ -373,6 +387,7 @@ export const authAPI = {
   getTokenExpiresAt,
   clearAuthToken,
   getPublicSettings,
+  getRegistrationCaptcha,
   sendVerifyCode,
   validatePromoCode,
   validateInvitationCode,

@@ -78,6 +78,7 @@ const (
 	SettingKeyRegistrationEnabled              = "registration_enabled"                // 是否开放注册
 	SettingKeyEmailVerifyEnabled               = "email_verify_enabled"                // 是否开启邮件验证
 	SettingKeyRegistrationVerifyCodeEnabled    = "registration_verify_code_enabled"    // 是否启用注册邮箱验证码
+	SettingKeyRegistrationImageCaptchaEnabled  = "registration_image_captcha_enabled"  // 是否启用注册图片验证码
 	SettingKeySingleIPRegistrationLimitEnabled = "single_ip_registration_limit_enabled" // 是否启用单 IP 仅注册一个账号限制
 	SettingKeyRegistrationEmailSuffixWhitelist = "registration_email_suffix_whitelist" // 注册邮箱后缀白名单（JSON 数组）
 	SettingKeyPromoCodeEnabled                 = "promo_code_enabled"                  // 是否启用优惠码功能

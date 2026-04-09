@@ -488,6 +488,7 @@ func TestAPIContracts(t *testing.T) {
 					"registration_enabled": true,
 					"email_verify_enabled": false,
 					"registration_verify_code_enabled": false,
+					"registration_image_captcha_enabled": false,
 					"single_ip_registration_limit_enabled": false,
 					"registration_email_suffix_whitelist": [],
 					"promo_code_enabled": true,

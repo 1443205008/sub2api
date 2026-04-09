@@ -35,6 +35,7 @@ func (h *SettingHandler) GetPublicSettings(c *gin.Context) {
 		RegistrationEnabled:              settings.RegistrationEnabled,
 		EmailVerifyEnabled:               settings.EmailVerifyEnabled,
 		RegistrationVerifyCodeEnabled:    settings.RegistrationVerifyCodeEnabled,
+		RegistrationImageCaptchaEnabled:  settings.RegistrationImageCaptchaEnabled,
 		RegistrationEmailSuffixWhitelist: settings.RegistrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                 settings.PromoCodeEnabled,
 		PasswordResetEnabled:             settings.PasswordResetEnabled,

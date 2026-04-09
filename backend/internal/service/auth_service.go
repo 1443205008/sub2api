@@ -41,6 +41,8 @@ var (
 	ErrInvitationCodeRequired  = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
 	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
 	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
+	ErrRegistrationImageCaptchaRequired = infraerrors.BadRequest("REGISTRATION_IMAGE_CAPTCHA_REQUIRED", "image captcha is required")
+	ErrRegistrationImageCaptchaInvalid  = infraerrors.BadRequest("REGISTRATION_IMAGE_CAPTCHA_INVALID", "image captcha is invalid or expired")
 	ErrRegistrationVerifyCodeDisabled = infraerrors.BadRequest("REGISTRATION_VERIFY_CODE_DISABLED", "registration verify code is disabled")
 	ErrRegistrationIPUnavailable      = infraerrors.ServiceUnavailable("REGISTRATION_IP_UNAVAILABLE", "unable to determine registration IP")
 	ErrRegistrationIPLimitExceeded    = infraerrors.Forbidden("REGISTRATION_IP_LIMIT_EXCEEDED", "this IP has already registered an account")
@@ -456,6 +458,14 @@ func (s *AuthService) IsRegistrationVerifyCodeEnabled(ctx context.Context) bool 
 		return false
 	}
 	return s.settingService.IsRegistrationVerifyCodeEnabled(ctx)
+}
+
+// IsRegistrationImageCaptchaEnabled checks whether registration requires an image captcha.
+func (s *AuthService) IsRegistrationImageCaptchaEnabled(ctx context.Context) bool {
+	if s.settingService == nil {
+		return false
+	}
+	return s.settingService.IsRegistrationImageCaptchaEnabled(ctx)
 }
 
 // IsSingleIPRegistrationLimitEnabled 检查是否开启单 IP 注册限制

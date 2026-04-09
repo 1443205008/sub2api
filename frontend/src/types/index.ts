@@ -57,6 +57,8 @@ export interface RegisterRequest {
   email: string
   password: string
   verify_code?: string
+  captcha_id?: string
+  captcha_code?: string
   turnstile_token?: string
   promo_code?: string
   invitation_code?: string
@@ -91,6 +93,7 @@ export interface PublicSettings {
   registration_enabled: boolean
   email_verify_enabled: boolean
   registration_verify_code_enabled: boolean
+  registration_image_captcha_enabled: boolean
   registration_email_suffix_whitelist: string[]
   promo_code_enabled: boolean
   password_reset_enabled: boolean

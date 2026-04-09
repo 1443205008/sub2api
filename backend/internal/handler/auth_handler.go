@@ -43,9 +43,17 @@ type RegisterRequest struct {
 	Email          string `json:"email" binding:"required,email"`
 	Password       string `json:"password" binding:"required,min=6"`
 	VerifyCode     string `json:"verify_code"`
+	CaptchaID      string `json:"captcha_id"`
+	CaptchaCode    string `json:"captcha_code"`
 	TurnstileToken string `json:"turnstile_token"`
 	PromoCode      string `json:"promo_code"`      // 注册优惠码
 	InvitationCode string `json:"invitation_code"` // 邀请码
+}
+
+type RegistrationCaptchaResponse struct {
+	CaptchaID string `json:"captcha_id"`
+	ImageData string `json:"image_data"`
+	ExpiresIn int    `json:"expires_in"`
 }
 
 // SendVerifyCodeRequest 发送验证码请求
@@ -113,6 +121,11 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
+	if err := h.authService.VerifyRegistrationImageCaptcha(c.Request.Context(), req.CaptchaID, req.CaptchaCode); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
 	// Turnstile 验证（邮箱验证码注册场景避免重复校验一次性 token）
 	if err := h.authService.VerifyTurnstileForRegister(c.Request.Context(), req.TurnstileToken, ip.GetClientIP(c), req.VerifyCode); err != nil {
 		response.ErrorFrom(c, err)
@@ -134,6 +147,21 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	h.respondWithTokenPair(c, user)
+}
+
+// GetRegistrationCaptcha returns a registration image captcha for public signup flow.
+// GET /api/v1/auth/registration-captcha
+func (h *AuthHandler) GetRegistrationCaptcha(c *gin.Context) {
+	captcha, err := h.authService.GenerateRegistrationImageCaptcha(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, RegistrationCaptchaResponse{
+		CaptchaID: captcha.CaptchaID,
+		ImageData: captcha.ImageData,
+		ExpiresIn: captcha.ExpiresIn,
+	})
 }
 
 // SendVerifyCode 发送邮箱验证码

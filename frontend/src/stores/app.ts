@@ -314,6 +314,7 @@ export const useAppStore = defineStore('app', () => {
         registration_enabled: false,
         email_verify_enabled: false,
         registration_verify_code_enabled: false,
+        registration_image_captcha_enabled: false,
         registration_email_suffix_whitelist: [],
         promo_code_enabled: true,
         password_reset_enabled: false,

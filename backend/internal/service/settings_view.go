@@ -4,6 +4,7 @@ type SystemSettings struct {
 	RegistrationEnabled              bool
 	EmailVerifyEnabled               bool
 	RegistrationVerifyCodeEnabled    bool
+	RegistrationImageCaptchaEnabled  bool
 	SingleIPRegistrationLimitEnabled bool
 	RegistrationEmailSuffixWhitelist []string
 	PromoCodeEnabled                 bool
@@ -94,6 +95,7 @@ type PublicSettings struct {
 	RegistrationEnabled              bool
 	EmailVerifyEnabled               bool
 	RegistrationVerifyCodeEnabled    bool
+	RegistrationImageCaptchaEnabled  bool
 	RegistrationEmailSuffixWhitelist []string
 	PromoCodeEnabled                 bool
 	PasswordResetEnabled             bool

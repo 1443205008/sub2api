@@ -143,6 +143,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyRegistrationEnabled,
 		SettingKeyEmailVerifyEnabled,
 		SettingKeyRegistrationVerifyCodeEnabled,
+		SettingKeyRegistrationImageCaptchaEnabled,
 		SettingKeyRegistrationEmailSuffixWhitelist,
 		SettingKeyPromoCodeEnabled,
 		SettingKeyPasswordResetEnabled,
@@ -197,6 +198,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:               emailVerifyEnabled,
 		RegistrationVerifyCodeEnabled:    registrationVerifyCodeEnabled,
+		RegistrationImageCaptchaEnabled:  settings[SettingKeyRegistrationImageCaptchaEnabled] == "true",
 		RegistrationEmailSuffixWhitelist: registrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                 settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
 		PasswordResetEnabled:             passwordResetEnabled,
@@ -476,6 +478,7 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyRegistrationEnabled] = strconv.FormatBool(settings.RegistrationEnabled)
 	updates[SettingKeyEmailVerifyEnabled] = strconv.FormatBool(settings.EmailVerifyEnabled)
 	updates[SettingKeyRegistrationVerifyCodeEnabled] = strconv.FormatBool(settings.RegistrationVerifyCodeEnabled)
+	updates[SettingKeyRegistrationImageCaptchaEnabled] = strconv.FormatBool(settings.RegistrationImageCaptchaEnabled)
 	updates[SettingKeySingleIPRegistrationLimitEnabled] = strconv.FormatBool(settings.SingleIPRegistrationLimitEnabled)
 	registrationEmailSuffixWhitelistJSON, err := json.Marshal(settings.RegistrationEmailSuffixWhitelist)
 	if err != nil {
@@ -765,6 +768,15 @@ func (s *SettingService) IsRegistrationVerifyCodeEnabled(ctx context.Context) bo
 	return value == "true"
 }
 
+// IsRegistrationImageCaptchaEnabled checks whether registration requires an image captcha.
+func (s *SettingService) IsRegistrationImageCaptchaEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationImageCaptchaEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
 // IsSingleIPRegistrationLimitEnabled checks whether one IP is limited to one registration.
 func (s *SettingService) IsSingleIPRegistrationLimitEnabled(ctx context.Context) bool {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeySingleIPRegistrationLimitEnabled)
@@ -898,6 +910,7 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeyRegistrationEnabled:              "true",
 		SettingKeyEmailVerifyEnabled:               "false",
 		SettingKeyRegistrationVerifyCodeEnabled:    "false",
+		SettingKeyRegistrationImageCaptchaEnabled:  "false",
 		SettingKeySingleIPRegistrationLimitEnabled: "false",
 		SettingKeyRegistrationEmailSuffixWhitelist: "[]",
 		SettingKeyPromoCodeEnabled:                 "true", // 默认启用优惠码功能
@@ -954,6 +967,7 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:               emailVerifyEnabled,
 		RegistrationVerifyCodeEnabled:    registrationVerifyCodeEnabled,
+		RegistrationImageCaptchaEnabled:  settings[SettingKeyRegistrationImageCaptchaEnabled] == "true",
 		SingleIPRegistrationLimitEnabled: settings[SettingKeySingleIPRegistrationLimitEnabled] == "true",
 		RegistrationEmailSuffixWhitelist: ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
 		PromoCodeEnabled:                 settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
