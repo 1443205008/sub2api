@@ -403,18 +403,10 @@ func (h *AuthHandler) ValidateInvitationCode(c *gin.Context) {
 	}
 
 	// 检查类型和状态
-	if redeemCode.Type != service.RedeemTypeInvitation {
+	if !service.CanUseInvitationCodeForRegistration(redeemCode) {
 		response.Success(c, ValidateInvitationCodeResponse{
 			Valid:     false,
 			ErrorCode: "INVITATION_CODE_INVALID",
-		})
-		return
-	}
-
-	if redeemCode.Status != service.StatusUnused {
-		response.Success(c, ValidateInvitationCodeResponse{
-			Valid:     false,
-			ErrorCode: "INVITATION_CODE_USED",
 		})
 		return
 	}

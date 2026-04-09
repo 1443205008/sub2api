@@ -33,6 +33,7 @@ const (
 	defaultInviteOverviewLimit  = 10
 	maxInviteOverviewLimit      = 50
 	inviteCodeIssuerNotePrefix  = "invite_issuer_user_id:"
+	inviteUsageNotePrefix       = "invite_usage_issuer_user_id:"
 	inviteCashbackNotePrefix    = "invite_cashback_from_user_id:"
 	inviteCashbackAmountDecimal = 1e8
 )
@@ -93,6 +94,17 @@ type InviteOverview struct {
 	InvitedUsers  int64            `json:"invited_users"`
 	TotalCashback float64          `json:"total_cashback"`
 	Codes         []InviteCodeItem `json:"codes"`
+}
+
+func IsReusableInviteSourceCode(code *RedeemCode) bool {
+	return code != nil && isInviteIssuerSourceNote(code.Notes)
+}
+
+func CanUseInvitationCodeForRegistration(code *RedeemCode) bool {
+	if code == nil || code.Type != RedeemTypeInvitation {
+		return false
+	}
+	return code.Status == StatusUnused || IsReusableInviteSourceCode(code)
 }
 
 // RedeemService 兑换码服务
@@ -233,8 +245,32 @@ func (s *RedeemService) GenerateInviteCode(ctx context.Context, issuerUserID int
 	if issuerUserID <= 0 {
 		return nil, infraerrors.BadRequest("INVALID_USER_ID", "invalid user id")
 	}
+	if s.entClient == nil {
+		return nil, infraerrors.InternalServer("INTERNAL_ERROR", "ent client not configured")
+	}
 	if _, err := s.userRepo.GetByID(ctx, issuerUserID); err != nil {
 		return nil, fmt.Errorf("get issuer user: %w", err)
+	}
+
+	note := buildInviteIssuerNote(issuerUserID)
+	existing, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(RedeemTypeInvitation),
+			redeemcode.NotesEQ(note),
+		).
+		Order(dbent.Desc(redeemcode.FieldID)).
+		First(ctx)
+	if err == nil {
+		return &InviteCodeItem{
+			Code:      existing.Code,
+			Status:    existing.Status,
+			UsedBy:    existing.UsedBy,
+			UsedAt:    existing.UsedAt,
+			CreatedAt: existing.CreatedAt,
+		}, nil
+	}
+	if err != nil && !dbent.IsNotFound(err) {
+		return nil, fmt.Errorf("query invite code: %w", err)
 	}
 
 	codeValue, err := GenerateRedeemCode()
@@ -247,7 +283,7 @@ func (s *RedeemService) GenerateInviteCode(ctx context.Context, issuerUserID int
 		Type:   RedeemTypeInvitation,
 		Value:  0,
 		Status: StatusUnused,
-		Notes:  buildInviteIssuerNote(issuerUserID),
+		Notes:  note,
 	}
 	if err := s.redeemRepo.Create(ctx, code); err != nil {
 		return nil, fmt.Errorf("create invite code: %w", err)
@@ -275,6 +311,7 @@ func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int6
 	}
 
 	note := buildInviteIssuerNote(issuerUserID)
+	usageNote := buildInviteUsageNote(issuerUserID)
 	codes, err := s.entClient.RedeemCode.Query().
 		Where(
 			redeemcode.TypeEQ(RedeemTypeInvitation),
@@ -298,7 +335,7 @@ func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int6
 		})
 	}
 
-	invitedUsers, err := s.entClient.RedeemCode.Query().
+	oldInvitedUsers, err := s.entClient.RedeemCode.Query().
 		Where(
 			redeemcode.TypeEQ(RedeemTypeInvitation),
 			redeemcode.NotesEQ(note),
@@ -308,6 +345,18 @@ func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int6
 		Count(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("count invited users: %w", err)
+	}
+
+	usageInvitedUsers, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(RedeemTypeInvitation),
+			redeemcode.NotesEQ(usageNote),
+			redeemcode.StatusEQ(StatusUsed),
+			redeemcode.UsedByNotNil(),
+		).
+		Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count invite usage records: %w", err)
 	}
 
 	totalCashback, err := sumRedeemValue(ctx, s.entClient,
@@ -321,7 +370,7 @@ func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int6
 
 	return &InviteOverview{
 		CashbackRate:  s.getInviteCashbackRate(ctx),
-		InvitedUsers:  int64(invitedUsers),
+		InvitedUsers:  int64(oldInvitedUsers + usageInvitedUsers),
 		TotalCashback: totalCashback,
 		Codes:         outCodes,
 	}, nil
@@ -619,7 +668,10 @@ func (s *RedeemService) findInviterByInvitedUser(ctx context.Context, invitedUse
 		Where(
 			redeemcode.TypeEQ(RedeemTypeInvitation),
 			redeemcode.UsedByEQ(invitedUserID),
-			redeemcode.NotesHasPrefix(inviteCodeIssuerNotePrefix),
+			redeemcode.Or(
+				redeemcode.NotesHasPrefix(inviteUsageNotePrefix),
+				redeemcode.NotesHasPrefix(inviteCodeIssuerNotePrefix),
+			),
 		).
 		Order(
 			dbent.Desc(redeemcode.FieldUsedAt),
@@ -647,19 +699,30 @@ func buildInviteIssuerNote(userID int64) string {
 	return inviteCodeIssuerNotePrefix + strconv.FormatInt(userID, 10)
 }
 
+func buildInviteUsageNote(userID int64) string {
+	return inviteUsageNotePrefix + strconv.FormatInt(userID, 10)
+}
+
+func isInviteIssuerSourceNote(note string) bool {
+	return strings.HasPrefix(note, inviteCodeIssuerNotePrefix)
+}
+
 func parseInviteIssuerUserID(note string) (int64, bool) {
-	if !strings.HasPrefix(note, inviteCodeIssuerNotePrefix) {
-		return 0, false
+	for _, prefix := range []string{inviteCodeIssuerNotePrefix, inviteUsageNotePrefix} {
+		if !strings.HasPrefix(note, prefix) {
+			continue
+		}
+		raw := strings.TrimSpace(strings.TrimPrefix(note, prefix))
+		if raw == "" {
+			return 0, false
+		}
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil || id <= 0 {
+			return 0, false
+		}
+		return id, true
 	}
-	raw := strings.TrimSpace(strings.TrimPrefix(note, inviteCodeIssuerNotePrefix))
-	if raw == "" {
-		return 0, false
-	}
-	id, err := strconv.ParseInt(raw, 10, 64)
-	if err != nil || id <= 0 {
-		return 0, false
-	}
-	return id, true
+	return 0, false
 }
 
 func buildInviteCashbackNote(invitedUserID int64) string {

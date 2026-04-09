@@ -853,14 +853,19 @@ export default {
       totalCashback: 'Total Cashback',
       latestCode: 'Latest Invite Code',
       noCode: 'No invite code yet',
+      inviteLink: 'Invite Link',
+      noLink: 'No invite link yet',
       generateCode: 'Generate Code',
       generating: 'Generating...',
       generateSuccess: 'Invite code generated successfully',
       generateFailed: 'Failed to generate invite code',
       copyCode: 'Copy Code',
+      copyLink: 'Copy Link',
       copySuccess: 'Invite code copied',
+      copyLinkSuccess: 'Invite link copied',
       copyFailed: 'Failed to copy, please copy manually',
-      help: 'When invited users register with your invite code and recharge via redeem codes, cashback is credited to you automatically.'
+      copyLinkFailed: 'Failed to copy invite link, please copy manually',
+      help: 'Each account keeps one reusable invite code. When invited users register with your code and recharge via redeem codes, cashback is credited to you automatically.'
     },
     // TOTP 2FA
     totp: {

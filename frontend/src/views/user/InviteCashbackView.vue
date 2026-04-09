@@ -90,6 +90,15 @@
                     {{ t('profile.invite.copyCode') }}
                   </button>
                 </div>
+                <div class="mt-4 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.inviteLink') }}</div>
+                <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <code class="inline-flex min-h-[2.5rem] flex-1 items-center overflow-x-auto rounded-lg bg-gray-100 px-3 py-2 text-sm text-gray-900 dark:bg-dark-800 dark:text-white">
+                    {{ inviteLink || t('profile.invite.noLink') }}
+                  </code>
+                  <button class="btn btn-secondary" :disabled="!inviteLink" @click="copyInviteLink">
+                    {{ t('profile.invite.copyLink') }}
+                  </button>
+                </div>
                 <p class="mt-2 text-xs text-gray-500 dark:text-dark-400">{{ t('profile.invite.help') }}</p>
               </div>
             </template>
@@ -134,6 +143,12 @@ const isValidUrl = computed(() => {
 })
 
 const latestInviteCode = computed(() => inviteOverview.value?.codes?.[0]?.code || '')
+const inviteLink = computed(() => {
+  if (!latestInviteCode.value || typeof window === 'undefined') return ''
+  const url = new URL('/register', window.location.origin)
+  url.searchParams.set('invitation_code', latestInviteCode.value)
+  return url.toString()
+})
 const invitedUsers = computed(() => inviteOverview.value?.invited_users || 0)
 const totalCashback = computed(() => inviteOverview.value?.total_cashback || 0)
 const cashbackRate = computed(() => {
@@ -177,6 +192,17 @@ const copyInviteCode = async () => {
   } catch (error) {
     console.error('Failed to copy invite code:', error)
     appStore.showError(t('profile.invite.copyFailed'))
+  }
+}
+
+const copyInviteLink = async () => {
+  if (!inviteLink.value) return
+  try {
+    await navigator.clipboard.writeText(inviteLink.value)
+    appStore.showSuccess(t('profile.invite.copyLinkSuccess'))
+  } catch (error) {
+    console.error('Failed to copy invite link:', error)
+    appStore.showError(t('profile.invite.copyLinkFailed'))
   }
 }
 

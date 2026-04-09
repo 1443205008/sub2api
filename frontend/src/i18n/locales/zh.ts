@@ -858,14 +858,19 @@ export default {
       totalCashback: '累计返现',
       latestCode: '最新邀请码',
       noCode: '暂无邀请码',
+      inviteLink: '邀请链接',
+      noLink: '暂无邀请链接',
       generateCode: '生成邀请码',
       generating: '生成中...',
       generateSuccess: '邀请码生成成功',
       generateFailed: '邀请码生成失败',
       copyCode: '复制邀请码',
+      copyLink: '复制邀请链接',
       copySuccess: '邀请码已复制',
+      copyLinkSuccess: '邀请链接已复制',
       copyFailed: '复制失败，请手动复制',
-      help: '被邀请用户通过邀请码注册并使用兑换码充值后，你将自动获得返现。'
+      copyLinkFailed: '复制邀请链接失败，请手动复制',
+      help: '每个账号固定一个邀请码，可重复邀请多人注册。被邀请用户注册并使用兑换码充值后，你将自动获得返现。'
     },
     // TOTP 2FA
     totp: {

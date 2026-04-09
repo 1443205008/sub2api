@@ -10,6 +10,7 @@ import (
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
+	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/stretchr/testify/require"
 )
 
@@ -55,6 +56,88 @@ func (s *settingRepoStub) Delete(ctx context.Context, key string) error {
 type emailCacheStub struct {
 	data *VerificationCodeData
 	err  error
+}
+
+type authRedeemRepoStub struct {
+	code      *RedeemCode
+	getErr    error
+	useErr    error
+	createErr error
+	used      []struct {
+		id     int64
+		userID int64
+	}
+	created []*RedeemCode
+}
+
+func (s *authRedeemRepoStub) Create(_ context.Context, code *RedeemCode) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
+	if code == nil {
+		return nil
+	}
+	cloned := *code
+	s.created = append(s.created, &cloned)
+	return nil
+}
+
+func (s *authRedeemRepoStub) CreateBatch(context.Context, []RedeemCode) error {
+	panic("unexpected CreateBatch call")
+}
+
+func (s *authRedeemRepoStub) GetByID(context.Context, int64) (*RedeemCode, error) {
+	panic("unexpected GetByID call")
+}
+
+func (s *authRedeemRepoStub) GetByCode(_ context.Context, code string) (*RedeemCode, error) {
+	if s.getErr != nil {
+		return nil, s.getErr
+	}
+	if s.code == nil || s.code.Code != code {
+		return nil, ErrRedeemCodeNotFound
+	}
+	cloned := *s.code
+	return &cloned, nil
+}
+
+func (s *authRedeemRepoStub) Update(context.Context, *RedeemCode) error {
+	panic("unexpected Update call")
+}
+
+func (s *authRedeemRepoStub) Delete(context.Context, int64) error {
+	panic("unexpected Delete call")
+}
+
+func (s *authRedeemRepoStub) Use(_ context.Context, id, userID int64) error {
+	if s.useErr != nil {
+		return s.useErr
+	}
+	s.used = append(s.used, struct {
+		id     int64
+		userID int64
+	}{id: id, userID: userID})
+	return nil
+}
+
+func (s *authRedeemRepoStub) List(context.Context, pagination.PaginationParams) ([]RedeemCode, *pagination.PaginationResult, error) {
+	panic("unexpected List call")
+}
+
+func (s *authRedeemRepoStub) ListWithFilters(context.Context, pagination.PaginationParams, string, string, string) ([]RedeemCode, *pagination.PaginationResult, error) {
+	panic("unexpected ListWithFilters call")
+}
+
+func (s *authRedeemRepoStub) ListByUser(context.Context, int64, int) ([]RedeemCode, error) {
+	panic("unexpected ListByUser call")
+}
+
+func (s *authRedeemRepoStub) ListByUserPaginated(context.Context, int64, pagination.PaginationParams, string) ([]RedeemCode, *pagination.PaginationResult, error) {
+	panic("unexpected ListByUserPaginated call")
+}
+
+func (s *authRedeemRepoStub) SumPositiveBalanceByUser(context.Context, int64) (float64, error) {
+	panic("unexpected SumPositiveBalanceByUser call")
 }
 
 type defaultSubscriptionAssignerStub struct {
@@ -108,6 +191,10 @@ func (s *emailCacheStub) SetPasswordResetEmailCooldown(ctx context.Context, emai
 }
 
 func newAuthService(repo *userRepoStub, settings map[string]string, emailCache EmailCache) *AuthService {
+	return newAuthServiceWithRedeemRepo(repo, nil, settings, emailCache)
+}
+
+func newAuthServiceWithRedeemRepo(repo *userRepoStub, redeemRepo RedeemCodeRepository, settings map[string]string, emailCache EmailCache) *AuthService {
 	cfg := &config.Config{
 		JWT: config.JWTConfig{
 			Secret:     "test-secret",
@@ -132,7 +219,7 @@ func newAuthService(repo *userRepoStub, settings map[string]string, emailCache E
 	return NewAuthService(
 		nil, // entClient
 		repo,
-		nil, // redeemRepo
+		redeemRepo,
 		nil, // refreshTokenCache
 		cfg,
 		settingService,
@@ -317,6 +404,58 @@ func TestAuthService_Register_Success(t *testing.T) {
 	require.Equal(t, 2, user.Concurrency)
 	require.Len(t, repo.created, 1)
 	require.True(t, user.CheckPassword("password"))
+}
+
+func TestAuthService_Register_ReusableInviteCodeCreatesUsageRecord(t *testing.T) {
+	repo := &userRepoStub{nextID: 9}
+	redeemRepo := &authRedeemRepoStub{
+		code: &RedeemCode{
+			ID:     1,
+			Code:   "invite-code",
+			Type:   RedeemTypeInvitation,
+			Status: StatusUsed,
+			Notes:  buildInviteIssuerNote(77),
+		},
+	}
+	service := newAuthServiceWithRedeemRepo(repo, redeemRepo, map[string]string{
+		SettingKeyRegistrationEnabled:  "true",
+		SettingKeyInvitationCodeEnabled: "true",
+	}, nil)
+
+	_, user, err := service.RegisterWithVerification(context.Background(), "invite@test.com", "password", "", "", "invite-code")
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Empty(t, redeemRepo.used)
+	require.Len(t, redeemRepo.created, 1)
+	require.Equal(t, RedeemTypeInvitation, redeemRepo.created[0].Type)
+	require.Equal(t, StatusUsed, redeemRepo.created[0].Status)
+	require.Equal(t, buildInviteUsageNote(77), redeemRepo.created[0].Notes)
+	require.NotNil(t, redeemRepo.created[0].UsedBy)
+	require.Equal(t, user.ID, *redeemRepo.created[0].UsedBy)
+}
+
+func TestAuthService_Register_SingleUseInviteCodeUsesOriginalCode(t *testing.T) {
+	repo := &userRepoStub{nextID: 10}
+	redeemRepo := &authRedeemRepoStub{
+		code: &RedeemCode{
+			ID:     2,
+			Code:   "single-use-code",
+			Type:   RedeemTypeInvitation,
+			Status: StatusUnused,
+		},
+	}
+	service := newAuthServiceWithRedeemRepo(repo, redeemRepo, map[string]string{
+		SettingKeyRegistrationEnabled:  "true",
+		SettingKeyInvitationCodeEnabled: "true",
+	}, nil)
+
+	_, user, err := service.RegisterWithVerification(context.Background(), "single-use@test.com", "password", "", "", "single-use-code")
+	require.NoError(t, err)
+	require.NotNil(t, user)
+	require.Len(t, redeemRepo.used, 1)
+	require.Equal(t, int64(2), redeemRepo.used[0].id)
+	require.Equal(t, user.ID, redeemRepo.used[0].userID)
+	require.Empty(t, redeemRepo.created)
 }
 
 func TestAuthService_ValidateToken_ExpiredReturnsClaimsWithError(t *testing.T) {
