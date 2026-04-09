@@ -452,7 +452,7 @@ func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int6
 		return nil, fmt.Errorf("sum invite cashback: %w", err)
 	}
 
-	records, err := s.listInviteRecords(ctx, note, usageNote, query)
+	records, err := s.listInviteRecords(ctx, issuerUserID, note, usageNote, query)
 	if err != nil {
 		return nil, fmt.Errorf("list invite records: %w", err)
 	}
@@ -500,7 +500,7 @@ func normalizeInviteOverviewQuery(query InviteOverviewQuery) InviteOverviewQuery
 	return query
 }
 
-func (s *RedeemService) listInviteRecords(ctx context.Context, sourceNote, usageNote string, query InviteOverviewQuery) (InviteRecordList, error) {
+func (s *RedeemService) listInviteRecords(ctx context.Context, issuerUserID int64, sourceNote, usageNote string, query InviteOverviewQuery) (InviteRecordList, error) {
 	inviteEntries, err := s.entClient.RedeemCode.Query().
 		Where(
 			redeemcode.TypeEQ(RedeemTypeInvitation),
