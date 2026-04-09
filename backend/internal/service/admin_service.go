@@ -27,6 +27,7 @@ type AdminService interface {
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
 	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)
+	BulkManageUsers(ctx context.Context, input *BulkManageUsersInput) (*BulkManageUsersResult, error)
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int) ([]APIKey, int64, error)
 	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
 	// GetUserBalanceHistory returns paginated balance/concurrency change records for a user.
@@ -125,6 +126,35 @@ type UpdateUserInput struct {
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64
+}
+
+const (
+	BulkUserActionDelete          = "delete"
+	BulkUserActionEnable          = "enable"
+	BulkUserActionDisable         = "disable"
+	BulkUserActionAddBalance      = "add_balance"
+	BulkUserActionSubtractBalance = "subtract_balance"
+)
+
+type BulkManageUsersInput struct {
+	UserIDs []int64
+	Action  string
+	Amount  *float64
+	Notes   string
+}
+
+type BulkManageUserResult struct {
+	UserID  int64  `json:"user_id"`
+	Success bool   `json:"success"`
+	Error   string `json:"error,omitempty"`
+}
+
+type BulkManageUsersResult struct {
+	Success    int                    `json:"success"`
+	Failed     int                    `json:"failed"`
+	SuccessIDs []int64                `json:"success_ids"`
+	FailedIDs  []int64                `json:"failed_ids"`
+	Results    []BulkManageUserResult `json:"results"`
 }
 
 type CreateGroupInput struct {
@@ -749,6 +779,58 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	}
 
 	return user, nil
+}
+
+func (s *adminServiceImpl) BulkManageUsers(ctx context.Context, input *BulkManageUsersInput) (*BulkManageUsersResult, error) {
+	if input == nil || len(input.UserIDs) == 0 {
+		return nil, infraerrors.BadRequest("INVALID_BULK_USER_INPUT", "user_ids is required")
+	}
+
+	result := &BulkManageUsersResult{
+		SuccessIDs: make([]int64, 0, len(input.UserIDs)),
+		FailedIDs:  make([]int64, 0, len(input.UserIDs)),
+		Results:    make([]BulkManageUserResult, 0, len(input.UserIDs)),
+	}
+
+	for _, userID := range input.UserIDs {
+		item := BulkManageUserResult{UserID: userID}
+
+		var err error
+		switch input.Action {
+		case BulkUserActionDelete:
+			err = s.DeleteUser(ctx, userID)
+		case BulkUserActionEnable:
+			_, err = s.UpdateUser(ctx, userID, &UpdateUserInput{Status: StatusActive})
+		case BulkUserActionDisable:
+			_, err = s.UpdateUser(ctx, userID, &UpdateUserInput{Status: StatusDisabled})
+		case BulkUserActionAddBalance:
+			if input.Amount == nil || *input.Amount <= 0 {
+				return nil, infraerrors.BadRequest("INVALID_BULK_USER_AMOUNT", "amount must be greater than 0")
+			}
+			_, err = s.UpdateUserBalance(ctx, userID, *input.Amount, "add", input.Notes)
+		case BulkUserActionSubtractBalance:
+			if input.Amount == nil || *input.Amount <= 0 {
+				return nil, infraerrors.BadRequest("INVALID_BULK_USER_AMOUNT", "amount must be greater than 0")
+			}
+			_, err = s.UpdateUserBalance(ctx, userID, *input.Amount, "subtract", input.Notes)
+		default:
+			return nil, infraerrors.BadRequest("INVALID_BULK_USER_ACTION", "invalid bulk user action")
+		}
+
+		if err != nil {
+			item.Error = err.Error()
+			result.Failed++
+			result.FailedIDs = append(result.FailedIDs, userID)
+		} else {
+			item.Success = true
+			result.Success++
+			result.SuccessIDs = append(result.SuccessIDs, userID)
+		}
+
+		result.Results = append(result.Results, item)
+	}
+
+	return result, nil
 }
 
 func (s *adminServiceImpl) GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int) ([]APIKey, int64, error) {

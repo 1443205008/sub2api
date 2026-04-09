@@ -211,6 +211,7 @@ func registerUserManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	users := admin.Group("/users")
 	{
 		users.GET("", h.Admin.User.List)
+		users.POST("/bulk-action", h.Admin.User.BulkAction)
 		users.GET("/:id", h.Admin.User.GetByID)
 		users.POST("", h.Admin.User.Create)
 		users.PUT("/:id", h.Admin.User.Update)

@@ -235,7 +235,42 @@
 
       <!-- Users Table -->
       <template #table>
-        <DataTable :columns="columns" :data="users" :loading="loading" :actions-count="7">
+        <UserBulkActionsBar
+          :selected-ids="selectedUserIds"
+          @delete="openBulkDeleteDialog"
+          @enable="() => handleBulkStatus('enable')"
+          @disable="() => handleBulkStatus('disable')"
+          @deposit="() => openBulkBalanceModal('add')"
+          @withdraw="() => openBulkBalanceModal('subtract')"
+          @clear="clearSelectedUsers"
+          @select-page="selectVisibleUsers"
+        />
+        <DataTable
+          :columns="columns"
+          :data="users"
+          :loading="loading"
+          :actions-count="7"
+          row-key="id"
+        >
+          <template #header-select>
+            <input
+              type="checkbox"
+              class="h-4 w-4 cursor-pointer rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="allVisibleSelected"
+              @click.stop
+              @change="toggleSelectAllVisible"
+            />
+          </template>
+
+          <template #cell-select="{ row }">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="isUserSelected(row.id)"
+              @change="toggleUserSelection(row.id)"
+            />
+          </template>
+
           <template #cell-email="{ value }">
             <div class="flex items-center gap-2">
               <div
@@ -585,11 +620,27 @@
     </Teleport>
 
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.users.deleteUser')" :message="t('admin.users.deleteConfirm', { email: deletingUser?.email })" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
+    <ConfirmDialog
+      :show="showBulkDeleteDialog"
+      :title="t('admin.users.bulkDeleteTitle')"
+      :message="t('admin.users.bulkDeleteConfirm', { count: selectedUserIds.length })"
+      :danger="true"
+      @confirm="confirmBulkDelete"
+      @cancel="showBulkDeleteDialog = false"
+    />
     <UserCreateModal :show="showCreateModal" @close="showCreateModal = false" @success="loadUsers" />
     <UserEditModal :show="showEditModal" :user="editingUser" @close="closeEditModal" @success="loadUsers" />
     <UserApiKeysModal :show="showApiKeysModal" :user="viewingUser" @close="closeApiKeysModal" />
     <UserAllowedGroupsModal :show="showAllowedGroupsModal" :user="allowedGroupsUser" @close="closeAllowedGroupsModal" @success="loadUsers" />
     <UserBalanceModal :show="showBalanceModal" :user="balanceUser" :operation="balanceOperation" @close="closeBalanceModal" @success="loadUsers" />
+    <UserBulkBalanceModal
+      :show="showBulkBalanceModal"
+      :selected-count="selectedUserIds.length"
+      :operation="bulkBalanceOperation"
+      :submitting="bulkActionSubmitting"
+      @close="showBulkBalanceModal = false"
+      @submit="handleBulkBalanceSubmit"
+    />
     <UserBalanceHistoryModal :show="showBalanceHistoryModal" :user="balanceHistoryUser" @close="closeBalanceHistoryModal" @deposit="handleDepositFromHistory" @withdraw="handleWithdrawFromHistory" />
     <GroupReplaceModal :show="showGroupReplaceModal" :user="groupReplaceUser" :old-group="groupReplaceOldGroup" :all-groups="allGroups" @close="closeGroupReplaceModal" @success="loadUsers" />
     <UserAttributesConfigModal :show="showAttributesModal" @close="handleAttributesModalClose" />
@@ -601,11 +652,13 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useTableSelection } from '@/composables/useTableSelection'
 import { formatDateTime } from '@/utils/format'
 import Icon from '@/components/icons/Icon.vue'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
+import type { BulkUserAction, BulkUserActionResult } from '@/api/admin/users'
 import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
 import type { BatchUserUsageStats } from '@/api/admin/dashboard'
 import type { Column } from '@/components/common/types'
@@ -623,6 +676,8 @@ import UserCreateModal from '@/components/admin/user/UserCreateModal.vue'
 import UserEditModal from '@/components/admin/user/UserEditModal.vue'
 import UserApiKeysModal from '@/components/admin/user/UserApiKeysModal.vue'
 import UserAllowedGroupsModal from '@/components/admin/user/UserAllowedGroupsModal.vue'
+import UserBulkActionsBar from '@/components/admin/user/UserBulkActionsBar.vue'
+import UserBulkBalanceModal from '@/components/admin/user/UserBulkBalanceModal.vue'
 import UserBalanceModal from '@/components/admin/user/UserBalanceModal.vue'
 import UserBalanceHistoryModal from '@/components/admin/user/UserBalanceHistoryModal.vue'
 import GroupReplaceModal from '@/components/admin/user/GroupReplaceModal.vue'
@@ -677,6 +732,7 @@ const getAttributeValue = (userId: number, attrId: number): string => {
 
 // All possible columns (for column settings)
 const allColumns = computed<Column[]>(() => [
+  { key: 'select', label: '', sortable: false, class: 'w-12' },
   { key: 'email', label: t('admin.users.columns.user'), sortable: true },
   { key: 'id', label: 'ID', sortable: true },
   { key: 'username', label: t('admin.users.columns.username'), sortable: true },
@@ -696,7 +752,7 @@ const allColumns = computed<Column[]>(() => [
 
 // Columns that can be toggled (exclude email and actions which are always visible)
 const toggleableColumns = computed(() =>
-  allColumns.value.filter(col => col.key !== 'email' && col.key !== 'actions')
+  allColumns.value.filter(col => col.key !== 'select' && col.key !== 'email' && col.key !== 'actions')
 )
 
 // Hidden columns (stored in Set - columns NOT in this set are visible)
@@ -767,11 +823,24 @@ const hasVisibleAttributeColumns = computed(() =>
 // Filtered columns based on visibility
 const columns = computed<Column[]>(() =>
   allColumns.value.filter(col =>
-    col.key === 'email' || col.key === 'actions' || !hiddenColumns.has(col.key)
+    col.key === 'select' || col.key === 'email' || col.key === 'actions' || !hiddenColumns.has(col.key)
   )
 )
 
 const users = ref<AdminUser[]>([])
+const {
+  selectedIds: selectedUserIds,
+  allVisibleSelected,
+  isSelected: isUserSelected,
+  toggle: toggleUserSelection,
+  clear: clearSelectedUsers,
+  setSelectedIds: setSelectedUserIds,
+  toggleVisible: toggleVisibleUsers,
+  selectVisible: selectVisibleUsers
+} = useTableSelection<AdminUser>({
+  rows: users,
+  getId: (user) => user.id
+})
 const loading = ref(false)
 const searchQuery = ref('')
 
@@ -911,11 +980,15 @@ const pagination = reactive({
 const showCreateModal = ref(false)
 const showEditModal = ref(false)
 const showDeleteDialog = ref(false)
+const showBulkDeleteDialog = ref(false)
 const showApiKeysModal = ref(false)
 const showAttributesModal = ref(false)
+const showBulkBalanceModal = ref(false)
 const editingUser = ref<AdminUser | null>(null)
 const deletingUser = ref<AdminUser | null>(null)
 const viewingUser = ref<AdminUser | null>(null)
+const bulkBalanceOperation = ref<'add' | 'subtract'>('add')
+const bulkActionSubmitting = ref(false)
 let abortController: AbortController | null = null
 let secondaryDataSeq = 0
 
@@ -1032,6 +1105,34 @@ const openActionMenu = (user: AdminUser, e: MouseEvent) => {
 const closeActionMenu = () => {
   activeMenuId.value = null
   menuPosition.value = null
+}
+
+const toggleSelectAllVisible = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  toggleVisibleUsers(target.checked)
+}
+
+const applyBulkActionResult = async (
+  result: BulkUserActionResult,
+  messages: {
+    success: string
+    partial: string
+    failed: string
+  },
+  fallbackSelection: number[]
+) => {
+  if (result.failed === 0) {
+    clearSelectedUsers()
+    appStore.showSuccess(messages.success)
+  } else if (result.success === 0) {
+    setSelectedUserIds(result.failed_ids.length > 0 ? result.failed_ids : fallbackSelection)
+    appStore.showError(messages.failed)
+  } else {
+    setSelectedUserIds(result.failed_ids.length > 0 ? result.failed_ids : fallbackSelection)
+    appStore.showError(messages.partial)
+  }
+
+  await loadUsers()
 }
 
 // Close menu when clicking outside
@@ -1307,10 +1408,115 @@ const confirmDelete = async () => {
   }
 }
 
+const openBulkDeleteDialog = () => {
+  if (selectedUserIds.value.length === 0) return
+  showBulkDeleteDialog.value = true
+}
+
+const confirmBulkDelete = async () => {
+  const userIds = [...selectedUserIds.value]
+  if (userIds.length === 0) return
+
+  try {
+    const result = await adminAPI.users.bulkAction(userIds, { action: 'delete' })
+    showBulkDeleteDialog.value = false
+    await applyBulkActionResult(
+      result,
+      {
+        success: t('admin.users.bulkDeleteSuccess', { count: result.success }),
+        partial: t('admin.users.bulkDeletePartial', { success: result.success, failed: result.failed }),
+        failed: t('admin.users.bulkDeleteFailed')
+      },
+      userIds
+    )
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.users.bulkDeleteFailed'))
+    console.error('Error bulk deleting users:', error)
+  }
+}
+
+const handleBulkStatus = async (action: Extract<BulkUserAction, 'enable' | 'disable'>) => {
+  const userIds = [...selectedUserIds.value]
+  if (userIds.length === 0) return
+
+  try {
+    const result = await adminAPI.users.bulkAction(userIds, { action })
+    await applyBulkActionResult(
+      result,
+      action === 'enable'
+        ? {
+            success: t('admin.users.bulkEnableSuccess', { count: result.success }),
+            partial: t('admin.users.bulkEnablePartial', { success: result.success, failed: result.failed }),
+            failed: t('admin.users.bulkEnableFailed')
+          }
+        : {
+            success: t('admin.users.bulkDisableSuccess', { count: result.success }),
+            partial: t('admin.users.bulkDisablePartial', { success: result.success, failed: result.failed }),
+            failed: t('admin.users.bulkDisableFailed')
+          },
+      userIds
+    )
+  } catch (error: any) {
+    const fallback = action === 'enable'
+      ? t('admin.users.bulkEnableFailed')
+      : t('admin.users.bulkDisableFailed')
+    appStore.showError(error.response?.data?.detail || fallback)
+    console.error('Error updating bulk user status:', error)
+  }
+}
+
 const handleDeposit = (user: AdminUser) => {
   balanceUser.value = user
   balanceOperation.value = 'add'
   showBalanceModal.value = true
+}
+
+const openBulkBalanceModal = (operation: 'add' | 'subtract') => {
+  if (selectedUserIds.value.length === 0) return
+  bulkBalanceOperation.value = operation
+  showBulkBalanceModal.value = true
+}
+
+const handleBulkBalanceSubmit = async ({ amount, notes }: { amount: number; notes: string }) => {
+  const userIds = [...selectedUserIds.value]
+  if (userIds.length === 0) return
+
+  bulkActionSubmitting.value = true
+  const action: Extract<BulkUserAction, 'add_balance' | 'subtract_balance'> =
+    bulkBalanceOperation.value === 'add' ? 'add_balance' : 'subtract_balance'
+
+  try {
+    const result = await adminAPI.users.bulkAction(userIds, {
+      action,
+      amount,
+      notes
+    })
+
+    showBulkBalanceModal.value = false
+    await applyBulkActionResult(
+      result,
+      action === 'add_balance'
+        ? {
+            success: t('admin.users.bulkDepositSuccess', { count: result.success }),
+            partial: t('admin.users.bulkDepositPartial', { success: result.success, failed: result.failed }),
+            failed: t('admin.users.bulkDepositFailed')
+          }
+        : {
+            success: t('admin.users.bulkWithdrawSuccess', { count: result.success }),
+            partial: t('admin.users.bulkWithdrawPartial', { success: result.success, failed: result.failed }),
+            failed: t('admin.users.bulkWithdrawFailed')
+          },
+      userIds
+    )
+  } catch (error: any) {
+    const fallback = action === 'add_balance'
+      ? t('admin.users.bulkDepositFailed')
+      : t('admin.users.bulkWithdrawFailed')
+    appStore.showError(error.response?.data?.detail || fallback)
+    console.error('Error updating bulk user balance:', error)
+  } finally {
+    bulkActionSubmitting.value = false
+  }
 }
 
 const handleWithdraw = (user: AdminUser) => {

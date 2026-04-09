@@ -6,6 +6,28 @@
 import { apiClient } from '../client'
 import type { AdminUser, UpdateUserRequest, PaginatedResponse, ApiKey } from '@/types'
 
+export type BulkUserAction = 'delete' | 'enable' | 'disable' | 'add_balance' | 'subtract_balance'
+
+export interface BulkUserActionRequest {
+  action: BulkUserAction
+  amount?: number
+  notes?: string
+}
+
+export interface BulkUserActionItemResult {
+  user_id: number
+  success: boolean
+  error?: string
+}
+
+export interface BulkUserActionResult {
+  success: number
+  failed: number
+  success_ids: number[]
+  failed_ids: number[]
+  results: BulkUserActionItemResult[]
+}
+
 /**
  * List all users with pagination
  * @param page - Page number (default: 1)
@@ -120,6 +142,17 @@ export async function updateBalance(
     balance,
     operation,
     notes: notes || ''
+  })
+  return data
+}
+
+export async function bulkAction(
+  userIds: number[],
+  payload: BulkUserActionRequest
+): Promise<BulkUserActionResult> {
+  const { data } = await apiClient.post<BulkUserActionResult>('/admin/users/bulk-action', {
+    user_ids: userIds,
+    ...payload
   })
   return data
 }
@@ -251,6 +284,7 @@ export const usersAPI = {
   update,
   delete: deleteUser,
   updateBalance,
+  bulkAction,
   updateConcurrency,
   toggleStatus,
   getUserApiKeys,

@@ -132,6 +132,21 @@ func (s *stubAdminService) UpdateUserBalance(ctx context.Context, userID int64, 
 	return &user, nil
 }
 
+func (s *stubAdminService) BulkManageUsers(ctx context.Context, input *service.BulkManageUsersInput) (*service.BulkManageUsersResult, error) {
+	result := &service.BulkManageUsersResult{
+		SuccessIDs: append([]int64{}, input.UserIDs...),
+		Results:    make([]service.BulkManageUserResult, 0, len(input.UserIDs)),
+	}
+	for _, userID := range input.UserIDs {
+		result.Results = append(result.Results, service.BulkManageUserResult{
+			UserID:  userID,
+			Success: true,
+		})
+	}
+	result.Success = len(result.SuccessIDs)
+	return result, nil
+}
+
 func (s *stubAdminService) GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int) ([]service.APIKey, int64, error) {
 	return s.apiKeys, int64(len(s.apiKeys)), nil
 }

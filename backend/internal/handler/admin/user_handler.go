@@ -66,6 +66,13 @@ type UpdateBalanceRequest struct {
 	Notes     string  `json:"notes"`
 }
 
+type BulkActionRequest struct {
+	UserIDs []int64  `json:"user_ids" binding:"required,min=1"`
+	Action  string   `json:"action" binding:"required,oneof=delete enable disable add_balance subtract_balance"`
+	Amount  *float64 `json:"amount"`
+	Notes   string   `json:"notes"`
+}
+
 // List handles listing all users with pagination
 // GET /api/v1/admin/users
 // Query params:
@@ -247,6 +254,37 @@ func (h *UserHandler) Delete(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{"message": "User deleted successfully"})
+}
+
+// BulkAction handles bulk user management actions.
+// POST /api/v1/admin/users/bulk-action
+func (h *UserHandler) BulkAction(c *gin.Context) {
+	var req BulkActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	req.UserIDs = normalizeInt64IDList(req.UserIDs)
+	if len(req.UserIDs) == 0 {
+		response.BadRequest(c, "Invalid request: user_ids must contain at least one valid ID")
+		return
+	}
+
+	if (req.Action == service.BulkUserActionAddBalance || req.Action == service.BulkUserActionSubtractBalance) &&
+		(req.Amount == nil || *req.Amount <= 0) {
+		response.BadRequest(c, "Invalid request: amount must be greater than 0")
+		return
+	}
+
+	executeAdminIdempotentJSON(c, "admin.users.bulk_action", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		return h.adminService.BulkManageUsers(ctx, &service.BulkManageUsersInput{
+			UserIDs: req.UserIDs,
+			Action:  req.Action,
+			Amount:  req.Amount,
+			Notes:   req.Notes,
+		})
+	})
 }
 
 // UpdateBalance handles updating user balance
