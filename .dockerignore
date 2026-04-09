@@ -25,6 +25,9 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
+!dist/
+!dist/sub2api-linux-amd64
+!dist/sub2api-linux-arm64
 
 # Node modules (will be installed in container)
 frontend/node_modules/
