@@ -41,6 +41,9 @@ var (
 	ErrInvitationCodeRequired  = infraerrors.BadRequest("INVITATION_CODE_REQUIRED", "invitation code is required")
 	ErrInvitationCodeInvalid   = infraerrors.BadRequest("INVITATION_CODE_INVALID", "invalid or used invitation code")
 	ErrOAuthInvitationRequired = infraerrors.Forbidden("OAUTH_INVITATION_REQUIRED", "invitation code required to complete oauth registration")
+	ErrRegistrationVerifyCodeDisabled = infraerrors.BadRequest("REGISTRATION_VERIFY_CODE_DISABLED", "registration verify code is disabled")
+	ErrRegistrationIPUnavailable      = infraerrors.ServiceUnavailable("REGISTRATION_IP_UNAVAILABLE", "unable to determine registration IP")
+	ErrRegistrationIPLimitExceeded    = infraerrors.Forbidden("REGISTRATION_IP_LIMIT_EXCEEDED", "this IP has already registered an account")
 )
 
 // maxTokenLength 限制 token 大小，避免超长 header 触发解析时的异常内存分配。
@@ -108,11 +111,16 @@ func NewAuthService(
 
 // Register 用户注册，返回token和用户
 func (s *AuthService) Register(ctx context.Context, email, password string) (string, *User, error) {
-	return s.RegisterWithVerification(ctx, email, password, "", "", "")
+	return s.RegisterWithVerificationAndIP(ctx, email, password, "", "", "", "")
 }
 
 // RegisterWithVerification 用户注册（支持邮件验证、优惠码和邀请码），返回token和用户
 func (s *AuthService) RegisterWithVerification(ctx context.Context, email, password, verifyCode, promoCode, invitationCode string) (string, *User, error) {
+	return s.RegisterWithVerificationAndIP(ctx, email, password, verifyCode, promoCode, invitationCode, "")
+}
+
+// RegisterWithVerificationAndIP 用户注册（支持邮件验证、优惠码、邀请码和单 IP 注册限制），返回token和用户
+func (s *AuthService) RegisterWithVerificationAndIP(ctx context.Context, email, password, verifyCode, promoCode, invitationCode, registrationIP string) (string, *User, error) {
 	// 检查是否开放注册（默认关闭：settingService 未配置时不允许注册）
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return "", nil, ErrRegDisabled
@@ -149,8 +157,8 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		invitationRedeemCode = redeemCode
 	}
 
-	// 检查是否需要邮件验证
-	if s.settingService != nil && s.settingService.IsEmailVerifyEnabled(ctx) {
+	// 检查是否需要注册验证码
+	if s.settingService != nil && s.settingService.IsRegistrationVerifyCodeEnabled(ctx) {
 		// 如果邮件验证已开启但邮件服务未配置，拒绝注册
 		// 这是一个配置错误，不应该允许绕过验证
 		if s.emailService == nil {
@@ -192,15 +200,17 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 
 	// 创建用户
 	user := &User{
-		Email:        email,
-		PasswordHash: hashedPassword,
-		Role:         RoleUser,
-		Balance:      defaultBalance,
-		Concurrency:  defaultConcurrency,
-		Status:       StatusActive,
+		Email:          email,
+		PasswordHash:   hashedPassword,
+		Role:           RoleUser,
+		Balance:        defaultBalance,
+		Concurrency:    defaultConcurrency,
+		Status:         StatusActive,
+		RegistrationIP: strings.TrimSpace(registrationIP),
 	}
 
-	if s.entClient != nil && invitationRedeemCode != nil {
+	useTx := s.entClient != nil && (invitationRedeemCode != nil || s.IsSingleIPRegistrationLimitEnabled(ctx))
+	if useTx {
 		tx, err := s.entClient.Tx(ctx)
 		if err != nil {
 			logger.LegacyPrintf("service.auth", "[Auth] Failed to begin transaction for registration: %v", err)
@@ -209,6 +219,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 		defer func() { _ = tx.Rollback() }()
 
 		txCtx := dbent.NewTxContext(ctx, tx)
+		if err := s.enforceSingleIPRegistrationLimit(txCtx, user.RegistrationIP); err != nil {
+			return "", nil, err
+		}
 		if err := s.userRepo.Create(txCtx, user); err != nil {
 			if errors.Is(err, ErrEmailExists) {
 				return "", nil, ErrEmailExists
@@ -225,6 +238,9 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 			return "", nil, ErrServiceUnavailable
 		}
 	} else {
+		if err := s.enforceSingleIPRegistrationLimit(ctx, user.RegistrationIP); err != nil {
+			return "", nil, err
+		}
 		if err := s.userRepo.Create(ctx, user); err != nil {
 			// 优先检查邮箱冲突错误（竞态条件下可能发生）
 			if errors.Is(err, ErrEmailExists) {
@@ -276,6 +292,9 @@ func (s *AuthService) SendVerifyCode(ctx context.Context, email string) error {
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		return ErrRegDisabled
 	}
+	if !s.settingService.IsRegistrationVerifyCodeEnabled(ctx) {
+		return ErrRegistrationVerifyCodeDisabled
+	}
 
 	if isReservedEmail(email) {
 		return ErrEmailReserved
@@ -316,6 +335,9 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string) (*S
 	if s.settingService == nil || !s.settingService.IsRegistrationEnabled(ctx) {
 		logger.LegacyPrintf("service.auth", "%s", "[Auth] Registration is disabled")
 		return nil, ErrRegDisabled
+	}
+	if !s.settingService.IsRegistrationVerifyCodeEnabled(ctx) {
+		return nil, ErrRegistrationVerifyCodeDisabled
 	}
 
 	if isReservedEmail(email) {
@@ -362,10 +384,10 @@ func (s *AuthService) SendVerifyCodeAsync(ctx context.Context, email string) (*S
 }
 
 // VerifyTurnstileForRegister 在注册场景下验证 Turnstile。
-// 当邮箱验证开启且已提交验证码时，说明验证码发送阶段已完成 Turnstile 校验，
+// 当注册验证码开启且已提交验证码时，说明验证码发送阶段已完成 Turnstile 校验，
 // 此处跳过二次校验，避免一次性 token 在注册提交时重复使用导致误报失败。
 func (s *AuthService) VerifyTurnstileForRegister(ctx context.Context, token, remoteIP, verifyCode string) error {
-	if s.IsEmailVerifyEnabled(ctx) && strings.TrimSpace(verifyCode) != "" {
+	if s.IsRegistrationVerifyCodeEnabled(ctx) && strings.TrimSpace(verifyCode) != "" {
 		logger.LegacyPrintf("service.auth", "%s", "[Auth] Email verify flow detected, skip duplicate Turnstile check on register")
 		return nil
 	}
@@ -426,6 +448,22 @@ func (s *AuthService) IsEmailVerifyEnabled(ctx context.Context) bool {
 		return false
 	}
 	return s.settingService.IsEmailVerifyEnabled(ctx)
+}
+
+// IsRegistrationVerifyCodeEnabled 检查是否开启注册邮箱验证码
+func (s *AuthService) IsRegistrationVerifyCodeEnabled(ctx context.Context) bool {
+	if s.settingService == nil {
+		return false
+	}
+	return s.settingService.IsRegistrationVerifyCodeEnabled(ctx)
+}
+
+// IsSingleIPRegistrationLimitEnabled 检查是否开启单 IP 注册限制
+func (s *AuthService) IsSingleIPRegistrationLimitEnabled(ctx context.Context) bool {
+	if s.settingService == nil {
+		return false
+	}
+	return s.settingService.IsSingleIPRegistrationLimitEnabled(ctx)
 }
 
 // Login 用户登录，返回JWT token
@@ -561,6 +599,10 @@ func (s *AuthService) LoginOrRegisterOAuth(ctx context.Context, email, username 
 // 与 LoginOrRegisterOAuth 功能相同，但返回 TokenPair 而非单个 token。
 // invitationCode 仅在邀请码注册模式下新用户注册时使用；已有账号登录时忽略。
 func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, email, username, invitationCode string) (*TokenPair, *User, error) {
+	return s.LoginOrRegisterOAuthWithTokenPairAndIP(ctx, email, username, invitationCode, "")
+}
+
+func (s *AuthService) LoginOrRegisterOAuthWithTokenPairAndIP(ctx context.Context, email, username, invitationCode, registrationIP string) (*TokenPair, *User, error) {
 	// 检查 refreshTokenCache 是否可用
 	if s.refreshTokenCache == nil {
 		return nil, nil, errors.New("refresh token cache not configured")
@@ -624,16 +666,18 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 			}
 
 			newUser := &User{
-				Email:        email,
-				Username:     username,
-				PasswordHash: hashedPassword,
-				Role:         RoleUser,
-				Balance:      defaultBalance,
-				Concurrency:  defaultConcurrency,
-				Status:       StatusActive,
+				Email:          email,
+				Username:       username,
+				PasswordHash:   hashedPassword,
+				Role:           RoleUser,
+				Balance:        defaultBalance,
+				Concurrency:    defaultConcurrency,
+				Status:         StatusActive,
+				RegistrationIP: strings.TrimSpace(registrationIP),
 			}
 
-			if s.entClient != nil && invitationRedeemCode != nil {
+			useTx := s.entClient != nil && (invitationRedeemCode != nil || s.IsSingleIPRegistrationLimitEnabled(ctx))
+			if useTx {
 				tx, err := s.entClient.Tx(ctx)
 				if err != nil {
 					logger.LegacyPrintf("service.auth", "[Auth] Failed to begin transaction for oauth registration: %v", err)
@@ -641,6 +685,9 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 				}
 				defer func() { _ = tx.Rollback() }()
 				txCtx := dbent.NewTxContext(ctx, tx)
+				if err := s.enforceSingleIPRegistrationLimit(txCtx, newUser.RegistrationIP); err != nil {
+					return nil, nil, err
+				}
 
 				if err := s.userRepo.Create(txCtx, newUser); err != nil {
 					if errors.Is(err, ErrEmailExists) {
@@ -665,6 +712,9 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 					s.assignDefaultSubscriptions(ctx, user.ID)
 				}
 			} else {
+				if err := s.enforceSingleIPRegistrationLimit(ctx, newUser.RegistrationIP); err != nil {
+					return nil, nil, err
+				}
 				if err := s.userRepo.Create(ctx, newUser); err != nil {
 					if errors.Is(err, ErrEmailExists) {
 						user, err = s.userRepo.GetByEmail(ctx, email)
@@ -708,6 +758,82 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 		return nil, nil, fmt.Errorf("generate token pair: %w", err)
 	}
 	return tokenPair, user, nil
+}
+
+func (s *AuthService) currentEntClient(ctx context.Context) *dbent.Client {
+	if tx := dbent.TxFromContext(ctx); tx != nil {
+		return tx.Client()
+	}
+	return s.entClient
+}
+
+func (s *AuthService) enforceSingleIPRegistrationLimit(ctx context.Context, registrationIP string) error {
+	if !s.IsSingleIPRegistrationLimitEnabled(ctx) {
+		return nil
+	}
+
+	registrationIP = strings.TrimSpace(registrationIP)
+	if registrationIP == "" {
+		return ErrRegistrationIPUnavailable
+	}
+
+	client := s.currentEntClient(ctx)
+	if client == nil {
+		logger.LegacyPrintf("service.auth", "%s", "[Auth] Ent client not configured while single IP registration limit is enabled")
+		return ErrServiceUnavailable
+	}
+
+	if dbent.TxFromContext(ctx) != nil {
+		if err := s.lockRegistrationIP(ctx, client, registrationIP); err != nil {
+			logger.LegacyPrintf("service.auth", "[Auth] Failed to lock registration IP %s: %v", registrationIP, err)
+			return ErrServiceUnavailable
+		}
+	}
+
+	count, err := countUsersByRegistrationIP(ctx, client, registrationIP)
+	if err != nil {
+		logger.LegacyPrintf("service.auth", "[Auth] Failed to count registrations for IP %s: %v", registrationIP, err)
+		return ErrServiceUnavailable
+	}
+	if count > 0 {
+		return ErrRegistrationIPLimitExceeded
+	}
+	return nil
+}
+
+func (s *AuthService) lockRegistrationIP(ctx context.Context, client *dbent.Client, registrationIP string) error {
+	rows, err := client.QueryContext(ctx, "SELECT pg_advisory_xact_lock(hashtext($1)::bigint)", "registration_ip:"+registrationIP)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		break
+	}
+	return rows.Err()
+}
+
+func countUsersByRegistrationIP(ctx context.Context, client *dbent.Client, registrationIP string) (int64, error) {
+	rows, err := client.QueryContext(ctx, "SELECT COUNT(1) FROM users WHERE deleted_at IS NULL AND registration_ip = $1", registrationIP)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var count int64
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return 0, err
+		}
+		return 0, nil
+	}
+	if err := rows.Scan(&count); err != nil {
+		return 0, err
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 // pendingOAuthTokenTTL is the validity period for pending OAuth tokens.

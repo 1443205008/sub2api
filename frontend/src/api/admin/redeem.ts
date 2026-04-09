@@ -160,6 +160,46 @@ export async function exportCodes(filters?: {
   return response.data
 }
 
+export interface InviteLeaderboardItem {
+  inviter_user_id: number
+  inviter_email: string
+  inviter_username: string
+  invited_users: number
+  total_cashback: number
+  cashback_count: number
+  last_invite_at?: string
+  last_cashback_at?: string
+}
+
+export interface InviteLeaderboardResponse {
+  items: InviteLeaderboardItem[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+  sort_by: string
+  sort_order: string
+  status: string
+  search: string
+}
+
+export async function getInviteRanking(params?: {
+  page?: number
+  page_size?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+  status?: '' | 'recharged' | 'not_recharged'
+  search?: string
+}, options?: {
+  signal?: AbortSignal
+}): Promise<InviteLeaderboardResponse> {
+  const { data } = await apiClient.get<InviteLeaderboardResponse>('/admin/redeem-codes/invite-ranking', {
+    params,
+    signal: options?.signal
+  })
+  return data
+}
+
 export const redeemAPI = {
   list,
   getById,
@@ -168,7 +208,8 @@ export const redeemAPI = {
   batchDelete,
   expire,
   getStats,
-  exportCodes
+  exportCodes,
+  getInviteRanking
 }
 
 export default redeemAPI

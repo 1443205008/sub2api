@@ -119,7 +119,15 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	_, user, err := h.authService.RegisterWithVerification(c.Request.Context(), req.Email, req.Password, req.VerifyCode, req.PromoCode, req.InvitationCode)
+	_, user, err := h.authService.RegisterWithVerificationAndIP(
+		c.Request.Context(),
+		req.Email,
+		req.Password,
+		req.VerifyCode,
+		req.PromoCode,
+		req.InvitationCode,
+		ip.GetClientIP(c),
+	)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return

@@ -67,6 +67,12 @@ func (r *userRepository) Create(ctx context.Context, userIn *service.User) error
 		return translatePersistenceError(err, nil, service.ErrEmailExists)
 	}
 
+	if registrationIP := strings.TrimSpace(userIn.RegistrationIP); registrationIP != "" {
+		if _, err := txClient.ExecContext(ctx, "UPDATE users SET registration_ip = $1 WHERE id = $2", registrationIP, created.ID); err != nil {
+			return err
+		}
+	}
+
 	if err := r.syncUserAllowedGroupsWithClient(ctx, txClient, created.ID, userIn.AllowedGroups); err != nil {
 		return err
 	}

@@ -142,6 +142,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 	keys := []string{
 		SettingKeyRegistrationEnabled,
 		SettingKeyEmailVerifyEnabled,
+		SettingKeyRegistrationVerifyCodeEnabled,
 		SettingKeyRegistrationEmailSuffixWhitelist,
 		SettingKeyPromoCodeEnabled,
 		SettingKeyPasswordResetEnabled,
@@ -182,6 +183,11 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 
 	// Password reset requires email verification to be enabled
 	emailVerifyEnabled := settings[SettingKeyEmailVerifyEnabled] == "true"
+	registrationVerifyCodeEnabled := parseBoolWithFallback(
+		settings,
+		SettingKeyRegistrationVerifyCodeEnabled,
+		emailVerifyEnabled,
+	)
 	passwordResetEnabled := emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true"
 	registrationEmailSuffixWhitelist := ParseRegistrationEmailSuffixWhitelist(
 		settings[SettingKeyRegistrationEmailSuffixWhitelist],
@@ -190,6 +196,7 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 	return &PublicSettings{
 		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:               emailVerifyEnabled,
+		RegistrationVerifyCodeEnabled:    registrationVerifyCodeEnabled,
 		RegistrationEmailSuffixWhitelist: registrationEmailSuffixWhitelist,
 		PromoCodeEnabled:                 settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
 		PasswordResetEnabled:             passwordResetEnabled,
@@ -441,6 +448,14 @@ func parseInviteCashbackRate(raw string) float64 {
 	return normalizeInviteCashbackRate(rate)
 }
 
+func parseBoolWithFallback(settings map[string]string, key string, fallback bool) bool {
+	value, ok := settings[key]
+	if !ok {
+		return fallback
+	}
+	return value == "true"
+}
+
 // UpdateSettings 更新系统设置
 func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSettings) error {
 	if err := s.validateDefaultSubscriptionGroups(ctx, settings.DefaultSubscriptions); err != nil {
@@ -460,6 +475,8 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	// 注册设置
 	updates[SettingKeyRegistrationEnabled] = strconv.FormatBool(settings.RegistrationEnabled)
 	updates[SettingKeyEmailVerifyEnabled] = strconv.FormatBool(settings.EmailVerifyEnabled)
+	updates[SettingKeyRegistrationVerifyCodeEnabled] = strconv.FormatBool(settings.RegistrationVerifyCodeEnabled)
+	updates[SettingKeySingleIPRegistrationLimitEnabled] = strconv.FormatBool(settings.SingleIPRegistrationLimitEnabled)
 	registrationEmailSuffixWhitelistJSON, err := json.Marshal(settings.RegistrationEmailSuffixWhitelist)
 	if err != nil {
 		return fmt.Errorf("marshal registration email suffix whitelist: %w", err)
@@ -738,6 +755,25 @@ func (s *SettingService) IsEmailVerifyEnabled(ctx context.Context) bool {
 	return value == "true"
 }
 
+// IsRegistrationVerifyCodeEnabled checks whether registration requires an email verification code.
+// Falls back to legacy email_verify_enabled when the dedicated setting is absent.
+func (s *SettingService) IsRegistrationVerifyCodeEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationVerifyCodeEnabled)
+	if err != nil {
+		return s.IsEmailVerifyEnabled(ctx)
+	}
+	return value == "true"
+}
+
+// IsSingleIPRegistrationLimitEnabled checks whether one IP is limited to one registration.
+func (s *SettingService) IsSingleIPRegistrationLimitEnabled(ctx context.Context) bool {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeySingleIPRegistrationLimitEnabled)
+	if err != nil {
+		return false
+	}
+	return value == "true"
+}
+
 // GetRegistrationEmailSuffixWhitelist returns normalized registration email suffix whitelist.
 func (s *SettingService) GetRegistrationEmailSuffixWhitelist(ctx context.Context) []string {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyRegistrationEmailSuffixWhitelist)
@@ -861,6 +897,8 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 	defaults := map[string]string{
 		SettingKeyRegistrationEnabled:              "true",
 		SettingKeyEmailVerifyEnabled:               "false",
+		SettingKeyRegistrationVerifyCodeEnabled:    "false",
+		SettingKeySingleIPRegistrationLimitEnabled: "false",
 		SettingKeyRegistrationEmailSuffixWhitelist: "[]",
 		SettingKeyPromoCodeEnabled:                 "true", // 默认启用优惠码功能
 		SettingKeySiteName:                         "Sub2API",
@@ -907,9 +945,16 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 // parseSettings 解析设置到结构体
 func (s *SettingService) parseSettings(settings map[string]string) *SystemSettings {
 	emailVerifyEnabled := settings[SettingKeyEmailVerifyEnabled] == "true"
+	registrationVerifyCodeEnabled := parseBoolWithFallback(
+		settings,
+		SettingKeyRegistrationVerifyCodeEnabled,
+		emailVerifyEnabled,
+	)
 	result := &SystemSettings{
 		RegistrationEnabled:              settings[SettingKeyRegistrationEnabled] == "true",
 		EmailVerifyEnabled:               emailVerifyEnabled,
+		RegistrationVerifyCodeEnabled:    registrationVerifyCodeEnabled,
+		SingleIPRegistrationLimitEnabled: settings[SettingKeySingleIPRegistrationLimitEnabled] == "true",
 		RegistrationEmailSuffixWhitelist: ParseRegistrationEmailSuffixWhitelist(settings[SettingKeyRegistrationEmailSuffixWhitelist]),
 		PromoCodeEnabled:                 settings[SettingKeyPromoCodeEnabled] != "false", // 默认启用
 		PasswordResetEnabled:             emailVerifyEnabled && settings[SettingKeyPasswordResetEnabled] == "true",

@@ -78,6 +78,35 @@ func (h *RedeemHandler) List(c *gin.Context) {
 	response.Paginated(c, out, total, page, pageSize)
 }
 
+// GetInviteRanking handles listing global invite cashback leaderboard.
+// GET /api/v1/admin/redeem-codes/invite-ranking
+func (h *RedeemHandler) GetInviteRanking(c *gin.Context) {
+	if h.redeemService == nil {
+		response.InternalError(c, "redeem service not configured")
+		return
+	}
+
+	page, pageSize := response.ParsePagination(c)
+	query := service.InviteLeaderboardQuery{
+		Page:      page,
+		PageSize:  pageSize,
+		SortBy:    c.DefaultQuery("sort_by", "total_cashback"),
+		SortOrder: c.DefaultQuery("sort_order", "desc"),
+		Status:    c.Query("status"),
+		Search:    strings.TrimSpace(c.Query("search")),
+	}
+	if len([]rune(query.Search)) > 100 {
+		query.Search = string([]rune(query.Search)[:100])
+	}
+
+	result, err := h.redeemService.GetInviteLeaderboard(c.Request.Context(), query)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, result)
+}
+
 // GetByID handles getting a redeem code by ID
 // GET /api/v1/admin/redeem-codes/:id
 func (h *RedeemHandler) GetByID(c *gin.Context) {

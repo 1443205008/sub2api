@@ -812,6 +812,21 @@
               <Toggle v-model="form.email_verify_enabled" />
             </div>
 
+            <!-- Registration Verify Code -->
+            <div
+              class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+            >
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.registration.registrationVerifyCode')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.registration.registrationVerifyCodeHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.registration_verify_code_enabled" />
+            </div>
+
             <!-- Email Suffix Whitelist -->
             <div class="border-t border-gray-100 pt-4 dark:border-dark-700">
               <label class="font-medium text-gray-900 dark:text-white">{{
@@ -890,6 +905,21 @@
                 </p>
               </div>
               <Toggle v-model="form.invitation_code_enabled" />
+            </div>
+
+            <!-- Single IP Registration Limit -->
+            <div
+              class="flex items-center justify-between border-t border-gray-100 pt-4 dark:border-dark-700"
+            >
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.registration.singleIPRegistrationLimit')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.registration.singleIPRegistrationLimitHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.single_ip_registration_limit_enabled" />
             </div>
             <!-- Password Reset - Only show when email verification is enabled -->
             <div
@@ -1864,8 +1894,8 @@
 
         <!-- Tab: Email -->
         <div v-show="activeTab === 'email'" class="space-y-6">
-        <!-- Email disabled hint - show when email_verify_enabled is off -->
-        <div v-if="!form.email_verify_enabled" class="card">
+        <!-- Email disabled hint - show when email-based features are off -->
+        <div v-if="!form.email_verify_enabled && !form.registration_verify_code_enabled" class="card">
           <div class="p-6">
             <div class="flex items-start gap-3">
               <Icon name="mail" size="md" class="mt-0.5 flex-shrink-0 text-gray-400 dark:text-gray-500" />
@@ -1881,8 +1911,8 @@
           </div>
         </div>
 
-        <!-- SMTP Settings - Only show when email verification is enabled -->
-        <div v-if="form.email_verify_enabled" class="card">
+        <!-- SMTP Settings - Only show when email-based features are enabled -->
+        <div v-if="form.email_verify_enabled || form.registration_verify_code_enabled" class="card">
           <div
             class="flex items-center justify-between border-b border-gray-100 px-6 py-4 dark:border-dark-700"
           >
@@ -2028,8 +2058,8 @@
           </div>
         </div>
 
-        <!-- Send Test Email - Only show when email verification is enabled -->
-        <div v-if="form.email_verify_enabled" class="card">
+        <!-- Send Test Email - Only show when email-based features are enabled -->
+        <div v-if="form.email_verify_enabled || form.registration_verify_code_enabled" class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
               {{ t('admin.settings.testEmail.title') }}
@@ -2245,6 +2275,8 @@ type SettingsForm = SystemSettings & {
 const form = reactive<SettingsForm>({
   registration_enabled: true,
   email_verify_enabled: false,
+  registration_verify_code_enabled: false,
+  single_ip_registration_limit_enabled: false,
   registration_email_suffix_whitelist: [],
   promo_code_enabled: true,
   invitation_code_enabled: false,
@@ -2581,6 +2613,8 @@ async function saveSettings() {
     const payload: UpdateSettingsRequest = {
       registration_enabled: form.registration_enabled,
       email_verify_enabled: form.email_verify_enabled,
+      registration_verify_code_enabled: form.registration_verify_code_enabled,
+      single_ip_registration_limit_enabled: form.single_ip_registration_limit_enabled,
       registration_email_suffix_whitelist: registrationEmailSuffixWhitelistTags.value.map(
         (suffix) => `@${suffix}`
       ),

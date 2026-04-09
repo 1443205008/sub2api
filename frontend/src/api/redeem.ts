@@ -38,6 +38,28 @@ export interface InviteOverview {
   invited_users: number
   total_cashback: number
   codes: InviteCodeItem[]
+  records: InviteRecordList
+}
+
+export interface InviteRecord {
+  invited_user_id: number
+  invited_user_email_masked: string
+  registered_at: string
+  invite_used_at?: string
+  total_cashback: number
+  cashback_count: number
+  last_cashback_at?: string
+}
+
+export interface InviteRecordList {
+  items: InviteRecord[]
+  total: number
+  page: number
+  page_size: number
+  pages: number
+  sort_by: string
+  sort_order: string
+  status: string
 }
 
 /**
@@ -85,9 +107,18 @@ export async function generateInviteCode(): Promise<InviteCodeItem> {
 /**
  * Get invite cashback overview for current user
  */
-export async function getInviteOverview(limit = 10): Promise<InviteOverview> {
+export async function getInviteOverview(params?: {
+  limit?: number
+  records_page?: number
+  records_page_size?: number
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+  status?: '' | 'recharged' | 'not_recharged'
+  date_from?: string
+  date_to?: string
+}): Promise<InviteOverview> {
   const { data } = await apiClient.get<InviteOverview>('/redeem/invite-overview', {
-    params: { limit }
+    params
   })
   return data
 }

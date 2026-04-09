@@ -26,6 +26,8 @@ type CustomEndpoint struct {
 type SystemSettings struct {
 	RegistrationEnabled              bool     `json:"registration_enabled"`
 	EmailVerifyEnabled               bool     `json:"email_verify_enabled"`
+	RegistrationVerifyCodeEnabled    bool     `json:"registration_verify_code_enabled"`
+	SingleIPRegistrationLimitEnabled bool     `json:"single_ip_registration_limit_enabled"`
 	RegistrationEmailSuffixWhitelist []string `json:"registration_email_suffix_whitelist"`
 	PromoCodeEnabled                 bool     `json:"promo_code_enabled"`
 	PasswordResetEnabled             bool     `json:"password_reset_enabled"`
@@ -110,6 +112,7 @@ type DefaultSubscriptionSetting struct {
 type PublicSettings struct {
 	RegistrationEnabled              bool             `json:"registration_enabled"`
 	EmailVerifyEnabled               bool             `json:"email_verify_enabled"`
+	RegistrationVerifyCodeEnabled    bool             `json:"registration_verify_code_enabled"`
 	RegistrationEmailSuffixWhitelist []string         `json:"registration_email_suffix_whitelist"`
 	PromoCodeEnabled                 bool             `json:"promo_code_enabled"`
 	PasswordResetEnabled             bool             `json:"password_reset_enabled"`

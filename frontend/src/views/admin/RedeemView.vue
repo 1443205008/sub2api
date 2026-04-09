@@ -171,6 +171,93 @@
       </template>
     </TablePageLayout>
 
+    <div class="card mt-6">
+      <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+          {{ t('admin.redeem.inviteRankingTitle') }}
+        </h2>
+        <p class="mt-1 text-sm text-gray-500 dark:text-dark-400">
+          {{ t('admin.redeem.inviteRankingDescription') }}
+        </p>
+      </div>
+      <div class="space-y-4 p-6">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex-1 sm:max-w-64">
+            <input
+              v-model="inviteRankingFilters.search"
+              type="text"
+              :placeholder="t('admin.redeem.inviteRankingSearch')"
+              class="input"
+              @input="handleInviteRankingSearch"
+            />
+          </div>
+          <Select
+            v-model="inviteRankingFilters.status"
+            :options="inviteRankingStatusOptions"
+            class="w-40"
+            @change="handleInviteRankingFilterChange"
+          />
+          <Select
+            v-model="inviteRankingFilters.sort"
+            :options="inviteRankingSortOptions"
+            class="w-52"
+            @change="handleInviteRankingFilterChange"
+          />
+          <button @click="loadInviteRanking" :disabled="inviteRankingLoading" class="btn btn-secondary">
+            <Icon name="refresh" size="md" :class="inviteRankingLoading ? 'animate-spin' : ''" />
+          </button>
+        </div>
+
+        <DataTable :columns="inviteRankingColumns" :data="inviteRankingRows" :loading="inviteRankingLoading">
+          <template #cell-rank="{ value }">
+            <span class="font-medium text-gray-900 dark:text-white">#{{ value }}</span>
+          </template>
+
+          <template #cell-inviter_email="{ row }">
+            <div class="flex flex-col">
+              <span class="font-medium text-gray-900 dark:text-white">{{ row.inviter_email || '-' }}</span>
+              <span class="text-xs text-gray-500 dark:text-dark-400">
+                {{ row.inviter_username || t('admin.redeem.userPrefix', { id: row.inviter_user_id }) }}
+              </span>
+            </div>
+          </template>
+
+          <template #cell-total_cashback="{ value }">
+            <span class="font-medium text-emerald-600 dark:text-emerald-400">${{ Number(value || 0).toFixed(2) }}</span>
+          </template>
+
+          <template #cell-cashback_count="{ value }">
+            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
+          </template>
+
+          <template #cell-last_invite_at="{ value }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">{{ value ? formatDateTime(value) : '-' }}</span>
+          </template>
+
+          <template #cell-last_cashback_at="{ value }">
+            <span class="text-sm text-gray-500 dark:text-dark-400">
+              {{ value ? formatDateTime(value) : t('admin.redeem.noCashbackYet') }}
+            </span>
+          </template>
+
+          <template #empty>
+            <div class="py-12 text-center text-sm text-gray-500 dark:text-dark-400">
+              {{ t('admin.redeem.noInviteRanking') }}
+            </div>
+          </template>
+        </DataTable>
+
+        <Pagination
+          v-if="inviteRankingPagination.total > 0"
+          :page="inviteRankingPagination.page"
+          :total="inviteRankingPagination.total"
+          :page-size="inviteRankingPagination.page_size"
+          @update:page="handleInviteRankingPageChange"
+          @update:pageSize="handleInviteRankingPageSizeChange"
+        />
+      </div>
+    </div>
+
     <!-- Delete Confirmation Dialog -->
     <ConfirmDialog
       :show="showDeleteDialog"
@@ -397,6 +484,7 @@ import { useAppStore } from '@/stores/app'
 import { useClipboard } from '@/composables/useClipboard'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
 import { adminAPI } from '@/api/admin'
+import type { InviteLeaderboardItem } from '@/api/admin/redeem'
 import { formatDateTime } from '@/utils/format'
 import type { RedeemCode, RedeemCodeType, Group, GroupPlatform, SubscriptionType } from '@/types'
 import type { Column } from '@/components/common/types'
@@ -421,6 +509,10 @@ interface GroupOption {
   platform: GroupPlatform
   subscriptionType: SubscriptionType
   rate: number
+}
+
+interface InviteRankingRow extends InviteLeaderboardItem {
+  rank: number
 }
 
 const showGenerateDialog = ref(false)
@@ -538,7 +630,22 @@ const pagination = reactive({
   pages: 0
 })
 
+const inviteRankingRows = ref<InviteRankingRow[]>([])
+const inviteRankingLoading = ref(false)
+const inviteRankingFilters = reactive({
+  search: '',
+  status: '',
+  sort: 'cashback_desc'
+})
+const inviteRankingPagination = reactive({
+  page: 1,
+  page_size: 10,
+  total: 0,
+  pages: 0
+})
+
 let abortController: AbortController | null = null
+let inviteRankingAbortController: AbortController | null = null
 
 const showDeleteDialog = ref(false)
 const showDeleteUnusedDialog = ref(false)
@@ -564,6 +671,33 @@ watch(
     }
   }
 )
+
+const inviteRankingColumns = computed<Column[]>(() => [
+  { key: 'rank', label: t('admin.redeem.columns.rank') },
+  { key: 'inviter_email', label: t('admin.redeem.columns.inviter') },
+  { key: 'invited_users', label: t('admin.redeem.columns.invitedUsers') },
+  { key: 'total_cashback', label: t('admin.redeem.columns.totalCashback') },
+  { key: 'cashback_count', label: t('admin.redeem.columns.cashbackCount') },
+  { key: 'last_invite_at', label: t('admin.redeem.columns.lastInviteAt') },
+  { key: 'last_cashback_at', label: t('admin.redeem.columns.lastCashbackAt') }
+])
+
+const inviteRankingStatusOptions = computed(() => [
+  { value: '', label: t('admin.redeem.inviteRankingStatusAll') },
+  { value: 'recharged', label: t('admin.redeem.recharged') },
+  { value: 'not_recharged', label: t('admin.redeem.notRecharged') }
+])
+
+const inviteRankingSortOptions = computed(() => [
+  { value: 'cashback_desc', label: t('admin.redeem.sortTotalCashbackDesc') },
+  { value: 'cashback_asc', label: t('admin.redeem.sortTotalCashbackAsc') },
+  { value: 'invited_desc', label: t('admin.redeem.sortInvitedUsersDesc') },
+  { value: 'invited_asc', label: t('admin.redeem.sortInvitedUsersAsc') },
+  { value: 'invite_desc', label: t('admin.redeem.sortLastInviteDesc') },
+  { value: 'invite_asc', label: t('admin.redeem.sortLastInviteAsc') },
+  { value: 'cashback_time_desc', label: t('admin.redeem.sortLastCashbackDesc') },
+  { value: 'cashback_time_asc', label: t('admin.redeem.sortLastCashbackAsc') }
+])
 
 const loadCodes = async () => {
   if (abortController) {
@@ -609,6 +743,93 @@ const loadCodes = async () => {
   }
 }
 
+const loadInviteRanking = async () => {
+  if (inviteRankingAbortController) {
+    inviteRankingAbortController.abort()
+  }
+  const currentController = new AbortController()
+  inviteRankingAbortController = currentController
+  inviteRankingLoading.value = true
+
+  try {
+    let sortBy: 'invited_users' | 'total_cashback' | 'last_invite_at' | 'last_cashback_at' = 'total_cashback'
+    let sortOrder: 'asc' | 'desc' = 'desc'
+    switch (inviteRankingFilters.sort) {
+      case 'cashback_asc':
+        sortBy = 'total_cashback'
+        sortOrder = 'asc'
+        break
+      case 'invited_desc':
+        sortBy = 'invited_users'
+        sortOrder = 'desc'
+        break
+      case 'invited_asc':
+        sortBy = 'invited_users'
+        sortOrder = 'asc'
+        break
+      case 'invite_desc':
+        sortBy = 'last_invite_at'
+        sortOrder = 'desc'
+        break
+      case 'invite_asc':
+        sortBy = 'last_invite_at'
+        sortOrder = 'asc'
+        break
+      case 'cashback_time_desc':
+        sortBy = 'last_cashback_at'
+        sortOrder = 'desc'
+        break
+      case 'cashback_time_asc':
+        sortBy = 'last_cashback_at'
+        sortOrder = 'asc'
+        break
+      default:
+        sortBy = 'total_cashback'
+        sortOrder = 'desc'
+        break
+    }
+
+    const response = await adminAPI.redeem.getInviteRanking({
+      page: inviteRankingPagination.page,
+      page_size: inviteRankingPagination.page_size,
+      search: inviteRankingFilters.search || undefined,
+      status: (inviteRankingFilters.status || '') as '' | 'recharged' | 'not_recharged',
+      sort_by: sortBy,
+      sort_order: sortOrder
+    }, {
+      signal: currentController.signal
+    })
+    if (currentController.signal.aborted) {
+      return
+    }
+
+    const rankOffset = (response.page - 1) * response.page_size
+    inviteRankingRows.value = (response.items || []).map((item, index) => ({
+      ...item,
+      rank: rankOffset + index + 1
+    }))
+    inviteRankingPagination.total = response.total
+    inviteRankingPagination.page = response.page
+    inviteRankingPagination.page_size = response.page_size
+    inviteRankingPagination.pages = response.pages
+  } catch (error: any) {
+    if (
+      currentController.signal.aborted ||
+      error?.name === 'AbortError' ||
+      error?.code === 'ERR_CANCELED'
+    ) {
+      return
+    }
+    appStore.showError(t('admin.redeem.failedToLoadInviteRanking'))
+    console.error('Error loading invite ranking:', error)
+  } finally {
+    if (inviteRankingAbortController === currentController && !currentController.signal.aborted) {
+      inviteRankingLoading.value = false
+      inviteRankingAbortController = null
+    }
+  }
+}
+
 let searchTimeout: ReturnType<typeof setTimeout>
 const handleSearch = () => {
   clearTimeout(searchTimeout)
@@ -616,6 +837,31 @@ const handleSearch = () => {
     pagination.page = 1
     loadCodes()
   }, 300)
+}
+
+let inviteRankingSearchTimeout: ReturnType<typeof setTimeout>
+const handleInviteRankingSearch = () => {
+  clearTimeout(inviteRankingSearchTimeout)
+  inviteRankingSearchTimeout = setTimeout(() => {
+    inviteRankingPagination.page = 1
+    loadInviteRanking()
+  }, 300)
+}
+
+const handleInviteRankingFilterChange = () => {
+  inviteRankingPagination.page = 1
+  loadInviteRanking()
+}
+
+const handleInviteRankingPageChange = (page: number) => {
+  inviteRankingPagination.page = page
+  loadInviteRanking()
+}
+
+const handleInviteRankingPageSizeChange = (pageSize: number) => {
+  inviteRankingPagination.page_size = pageSize
+  inviteRankingPagination.page = 1
+  loadInviteRanking()
 }
 
 const handlePageChange = (page: number) => {
@@ -748,11 +994,14 @@ const loadSubscriptionGroups = async () => {
 
 onMounted(() => {
   loadCodes()
+  loadInviteRanking()
   loadSubscriptionGroups()
 })
 
 onUnmounted(() => {
   clearTimeout(searchTimeout)
+  clearTimeout(inviteRankingSearchTimeout)
   abortController?.abort()
+  inviteRankingAbortController?.abort()
 })
 </script>

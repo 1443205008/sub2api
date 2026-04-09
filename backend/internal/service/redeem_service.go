@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	dbent "github.com/Wei-Shaw/sub2api/ent"
 	"github.com/Wei-Shaw/sub2api/ent/predicate"
 	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
+	dbuser "github.com/Wei-Shaw/sub2api/ent/user"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -32,10 +34,32 @@ const (
 	redeemLockDuration          = 10 * time.Second // 锁超时时间，防止死锁
 	defaultInviteOverviewLimit  = 10
 	maxInviteOverviewLimit      = 50
+	defaultInviteRecordsPageSize = 10
+	maxInviteRecordsPageSize     = 100
+	defaultInviteRankingPageSize = 20
+	maxInviteRankingPageSize     = 100
 	inviteCodeIssuerNotePrefix  = "invite_issuer_user_id:"
 	inviteUsageNotePrefix       = "invite_usage_issuer_user_id:"
 	inviteCashbackNotePrefix    = "invite_cashback_from_user_id:"
 	inviteCashbackAmountDecimal = 1e8
+)
+
+const (
+	inviteStatusAll          = ""
+	inviteStatusRecharged    = "recharged"
+	inviteStatusNotRecharged = "not_recharged"
+
+	inviteSortOrderAsc  = "asc"
+	inviteSortOrderDesc = "desc"
+
+	inviteRecordSortRegisteredAt  = "registered_at"
+	inviteRecordSortLastCashback  = "last_cashback_at"
+	inviteRecordSortTotalCashback = "total_cashback"
+
+	inviteRankingSortInvitedUsers = "invited_users"
+	inviteRankingSortTotalCashback = "total_cashback"
+	inviteRankingSortLastInviteAt = "last_invite_at"
+	inviteRankingSortLastCashback = "last_cashback_at"
 )
 
 // RedeemCache defines cache operations for redeem service
@@ -94,6 +118,71 @@ type InviteOverview struct {
 	InvitedUsers  int64            `json:"invited_users"`
 	TotalCashback float64          `json:"total_cashback"`
 	Codes         []InviteCodeItem `json:"codes"`
+	Records       InviteRecordList `json:"records"`
+}
+
+type InviteRecord struct {
+	InvitedUserID          int64      `json:"invited_user_id"`
+	InvitedUserEmailMasked string     `json:"invited_user_email_masked"`
+	RegisteredAt           time.Time  `json:"registered_at"`
+	InviteUsedAt           *time.Time `json:"invite_used_at,omitempty"`
+	TotalCashback          float64    `json:"total_cashback"`
+	CashbackCount          int        `json:"cashback_count"`
+	LastCashbackAt         *time.Time `json:"last_cashback_at,omitempty"`
+}
+
+type InviteRecordList struct {
+	Items     []InviteRecord `json:"items"`
+	Total     int64          `json:"total"`
+	Page      int            `json:"page"`
+	PageSize  int            `json:"page_size"`
+	Pages     int            `json:"pages"`
+	SortBy    string         `json:"sort_by"`
+	SortOrder string         `json:"sort_order"`
+	Status    string         `json:"status"`
+}
+
+type InviteOverviewQuery struct {
+	CodesLimit       int
+	RecordsPage      int
+	RecordsPageSize  int
+	RecordsSortBy    string
+	RecordsSortOrder string
+	RecordsStatus    string
+	RecordsDateFrom  *time.Time
+	RecordsDateTo    *time.Time
+}
+
+type InviteLeaderboardItem struct {
+	InviterUserID  int64      `json:"inviter_user_id"`
+	InviterEmail   string     `json:"inviter_email"`
+	InviterUsername string    `json:"inviter_username"`
+	InvitedUsers   int64      `json:"invited_users"`
+	TotalCashback  float64    `json:"total_cashback"`
+	CashbackCount  int        `json:"cashback_count"`
+	LastInviteAt   *time.Time `json:"last_invite_at,omitempty"`
+	LastCashbackAt *time.Time `json:"last_cashback_at,omitempty"`
+}
+
+type InviteLeaderboardPage struct {
+	Items     []InviteLeaderboardItem `json:"items"`
+	Total     int64                   `json:"total"`
+	Page      int                     `json:"page"`
+	PageSize  int                     `json:"page_size"`
+	Pages     int                     `json:"pages"`
+	SortBy    string                  `json:"sort_by"`
+	SortOrder string                  `json:"sort_order"`
+	Status    string                  `json:"status"`
+	Search    string                  `json:"search"`
+}
+
+type InviteLeaderboardQuery struct {
+	Page      int
+	PageSize  int
+	SortBy    string
+	SortOrder string
+	Status    string
+	Search    string
 }
 
 func IsReusableInviteSourceCode(code *RedeemCode) bool {
@@ -299,16 +388,11 @@ func (s *RedeemService) GenerateInviteCode(ctx context.Context, issuerUserID int
 }
 
 // GetInviteOverview 返回用户邀请返现概览。
-func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int64, limit int) (*InviteOverview, error) {
+func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int64, query InviteOverviewQuery) (*InviteOverview, error) {
 	if s.entClient == nil {
 		return nil, infraerrors.InternalServer("INTERNAL_ERROR", "ent client not configured")
 	}
-	if limit <= 0 {
-		limit = defaultInviteOverviewLimit
-	}
-	if limit > maxInviteOverviewLimit {
-		limit = maxInviteOverviewLimit
-	}
+	query = normalizeInviteOverviewQuery(query)
 
 	note := buildInviteIssuerNote(issuerUserID)
 	usageNote := buildInviteUsageNote(issuerUserID)
@@ -318,7 +402,7 @@ func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int6
 			redeemcode.NotesEQ(note),
 		).
 		Order(dbent.Desc(redeemcode.FieldID)).
-		Limit(limit).
+		Limit(query.CodesLimit).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list invite codes: %w", err)
@@ -368,12 +452,545 @@ func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int6
 		return nil, fmt.Errorf("sum invite cashback: %w", err)
 	}
 
+	records, err := s.listInviteRecords(ctx, note, usageNote, query)
+	if err != nil {
+		return nil, fmt.Errorf("list invite records: %w", err)
+	}
+
 	return &InviteOverview{
 		CashbackRate:  s.getInviteCashbackRate(ctx),
 		InvitedUsers:  int64(oldInvitedUsers + usageInvitedUsers),
 		TotalCashback: totalCashback,
 		Codes:         outCodes,
+		Records:       records,
 	}, nil
+}
+
+func normalizeInviteOverviewQuery(query InviteOverviewQuery) InviteOverviewQuery {
+	if query.CodesLimit <= 0 {
+		query.CodesLimit = defaultInviteOverviewLimit
+	}
+	if query.CodesLimit > maxInviteOverviewLimit {
+		query.CodesLimit = maxInviteOverviewLimit
+	}
+	if query.RecordsPage <= 0 {
+		query.RecordsPage = 1
+	}
+	if query.RecordsPageSize <= 0 {
+		query.RecordsPageSize = defaultInviteRecordsPageSize
+	}
+	if query.RecordsPageSize > maxInviteRecordsPageSize {
+		query.RecordsPageSize = maxInviteRecordsPageSize
+	}
+	switch query.RecordsSortBy {
+	case inviteRecordSortRegisteredAt, inviteRecordSortLastCashback, inviteRecordSortTotalCashback:
+	default:
+		query.RecordsSortBy = inviteRecordSortRegisteredAt
+	}
+	switch query.RecordsSortOrder {
+	case inviteSortOrderAsc, inviteSortOrderDesc:
+	default:
+		query.RecordsSortOrder = inviteSortOrderDesc
+	}
+	switch query.RecordsStatus {
+	case inviteStatusAll, inviteStatusRecharged, inviteStatusNotRecharged:
+	default:
+		query.RecordsStatus = inviteStatusAll
+	}
+	return query
+}
+
+func (s *RedeemService) listInviteRecords(ctx context.Context, sourceNote, usageNote string, query InviteOverviewQuery) (InviteRecordList, error) {
+	inviteEntries, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(RedeemTypeInvitation),
+			redeemcode.UsedByNotNil(),
+			redeemcode.Or(
+				redeemcode.NotesEQ(sourceNote),
+				redeemcode.NotesEQ(usageNote),
+			),
+		).
+		Order(
+			dbent.Desc(redeemcode.FieldUsedAt),
+			dbent.Desc(redeemcode.FieldID),
+		).
+		All(ctx)
+	if err != nil {
+		return InviteRecordList{}, err
+	}
+	if len(inviteEntries) == 0 {
+		return InviteRecordList{
+			Items:     []InviteRecord{},
+			Total:     0,
+			Page:      query.RecordsPage,
+			PageSize:  query.RecordsPageSize,
+			Pages:     1,
+			SortBy:    query.RecordsSortBy,
+			SortOrder: query.RecordsSortOrder,
+			Status:    query.RecordsStatus,
+		}, nil
+	}
+
+	userIDs := make([]int64, 0, len(inviteEntries))
+	recordByUserID := make(map[int64]*InviteRecord, len(inviteEntries))
+	for i := range inviteEntries {
+		if inviteEntries[i].UsedBy == nil || *inviteEntries[i].UsedBy <= 0 {
+			continue
+		}
+		invitedUserID := *inviteEntries[i].UsedBy
+		if _, exists := recordByUserID[invitedUserID]; exists {
+			continue
+		}
+		record := &InviteRecord{
+			InvitedUserID: invitedUserID,
+			InviteUsedAt:  inviteEntries[i].UsedAt,
+		}
+		if inviteEntries[i].UsedAt != nil {
+			record.RegisteredAt = *inviteEntries[i].UsedAt
+		}
+		recordByUserID[invitedUserID] = record
+		userIDs = append(userIDs, invitedUserID)
+	}
+	if len(userIDs) == 0 {
+		return InviteRecordList{
+			Items:     []InviteRecord{},
+			Total:     0,
+			Page:      query.RecordsPage,
+			PageSize:  query.RecordsPageSize,
+			Pages:     1,
+			SortBy:    query.RecordsSortBy,
+			SortOrder: query.RecordsSortOrder,
+			Status:    query.RecordsStatus,
+		}, nil
+	}
+
+	users, err := s.entClient.User.Query().
+		Where(dbuser.IDIn(userIDs...)).
+		All(ctx)
+	if err != nil {
+		return InviteRecordList{}, err
+	}
+	for i := range users {
+		record := recordByUserID[users[i].ID]
+		if record == nil {
+			continue
+		}
+		record.InvitedUserEmailMasked = MaskEmail(users[i].Email)
+		record.RegisteredAt = users[i].CreatedAt
+	}
+
+	cashbackRecords, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(AdjustmentTypeInviteCashback),
+			redeemcode.UsedByEQ(issuerUserID),
+			redeemcode.NotesHasPrefix(inviteCashbackNotePrefix),
+		).
+		All(ctx)
+	if err != nil {
+		return InviteRecordList{}, err
+	}
+	for i := range cashbackRecords {
+		note := ""
+		if cashbackRecords[i].Notes != nil {
+			note = *cashbackRecords[i].Notes
+		}
+		invitedUserID, ok := parseInviteCashbackInvitedUserID(note)
+		if !ok {
+			continue
+		}
+		record := recordByUserID[invitedUserID]
+		if record == nil {
+			continue
+		}
+		record.TotalCashback += cashbackRecords[i].Value
+		record.CashbackCount++
+		if cashbackRecords[i].UsedAt != nil {
+			if record.LastCashbackAt == nil || cashbackRecords[i].UsedAt.After(*record.LastCashbackAt) {
+				ts := *cashbackRecords[i].UsedAt
+				record.LastCashbackAt = &ts
+			}
+		}
+	}
+
+	records := make([]InviteRecord, 0, len(userIDs))
+	for _, invitedUserID := range userIDs {
+		record := recordByUserID[invitedUserID]
+		if record == nil {
+			continue
+		}
+		if record.InvitedUserEmailMasked == "" {
+			record.InvitedUserEmailMasked = "Unknown"
+		}
+		records = append(records, *record)
+	}
+	records = filterInviteRecords(records, query)
+	sortInviteRecords(records, query.RecordsSortBy, query.RecordsSortOrder)
+	total := len(records)
+	page, pageSize, pages := paginateInviteList(query.RecordsPage, query.RecordsPageSize, total)
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+
+	items := make([]InviteRecord, 0, end-start)
+	if start < end {
+		items = append(items, records[start:end]...)
+	}
+
+	return InviteRecordList{
+		Items:     items,
+		Total:     int64(total),
+		Page:      page,
+		PageSize:  pageSize,
+		Pages:     pages,
+		SortBy:    query.RecordsSortBy,
+		SortOrder: query.RecordsSortOrder,
+		Status:    query.RecordsStatus,
+	}, nil
+}
+
+func filterInviteRecords(records []InviteRecord, query InviteOverviewQuery) []InviteRecord {
+	if len(records) == 0 {
+		return records
+	}
+
+	filtered := make([]InviteRecord, 0, len(records))
+	for _, record := range records {
+		if query.RecordsStatus == inviteStatusRecharged && record.TotalCashback <= 0 {
+			continue
+		}
+		if query.RecordsStatus == inviteStatusNotRecharged && record.TotalCashback > 0 {
+			continue
+		}
+		if query.RecordsDateFrom != nil && record.RegisteredAt.Before(*query.RecordsDateFrom) {
+			continue
+		}
+		if query.RecordsDateTo != nil && !record.RegisteredAt.Before(*query.RecordsDateTo) {
+			continue
+		}
+		filtered = append(filtered, record)
+	}
+	return filtered
+}
+
+func sortInviteRecords(records []InviteRecord, sortBy, sortOrder string) {
+	desc := sortOrder != inviteSortOrderAsc
+	sort.Slice(records, func(i, j int) bool {
+		switch sortBy {
+		case inviteRecordSortLastCashback:
+			return compareOptionalTimes(records[i].LastCashbackAt, records[j].LastCashbackAt, desc)
+		case inviteRecordSortTotalCashback:
+			if records[i].TotalCashback == records[j].TotalCashback {
+				return compareTimes(records[i].RegisteredAt, records[j].RegisteredAt, true)
+			}
+			if desc {
+				return records[i].TotalCashback > records[j].TotalCashback
+			}
+			return records[i].TotalCashback < records[j].TotalCashback
+		default:
+			return compareTimes(records[i].RegisteredAt, records[j].RegisteredAt, desc)
+		}
+	})
+}
+
+func paginateInviteList(page, pageSize, total int) (int, int, int) {
+	if pageSize <= 0 {
+		pageSize = defaultInviteRecordsPageSize
+	}
+	pages := 1
+	if total > 0 {
+		pages = (total + pageSize - 1) / pageSize
+	}
+	if page <= 0 {
+		page = 1
+	}
+	if page > pages {
+		page = pages
+	}
+	return page, pageSize, pages
+}
+
+func compareTimes(a, b time.Time, desc bool) bool {
+	if a.Equal(b) {
+		return false
+	}
+	if desc {
+		return a.After(b)
+	}
+	return a.Before(b)
+}
+
+func compareOptionalTimes(a, b *time.Time, desc bool) bool {
+	switch {
+	case a == nil && b == nil:
+		return false
+	case a == nil:
+		return false
+	case b == nil:
+		return true
+	default:
+		return compareTimes(*a, *b, desc)
+	}
+}
+
+func normalizeInviteLeaderboardQuery(query InviteLeaderboardQuery) InviteLeaderboardQuery {
+	if query.Page <= 0 {
+		query.Page = 1
+	}
+	if query.PageSize <= 0 {
+		query.PageSize = defaultInviteRankingPageSize
+	}
+	if query.PageSize > maxInviteRankingPageSize {
+		query.PageSize = maxInviteRankingPageSize
+	}
+	switch query.SortBy {
+	case inviteRankingSortInvitedUsers, inviteRankingSortTotalCashback, inviteRankingSortLastInviteAt, inviteRankingSortLastCashback:
+	default:
+		query.SortBy = inviteRankingSortTotalCashback
+	}
+	switch query.SortOrder {
+	case inviteSortOrderAsc, inviteSortOrderDesc:
+	default:
+		query.SortOrder = inviteSortOrderDesc
+	}
+	switch query.Status {
+	case inviteStatusAll, inviteStatusRecharged, inviteStatusNotRecharged:
+	default:
+		query.Status = inviteStatusAll
+	}
+	query.Search = strings.TrimSpace(query.Search)
+	return query
+}
+
+func (s *RedeemService) GetInviteLeaderboard(ctx context.Context, query InviteLeaderboardQuery) (*InviteLeaderboardPage, error) {
+	if s.entClient == nil {
+		return nil, infraerrors.InternalServer("INTERNAL_ERROR", "ent client not configured")
+	}
+
+	query = normalizeInviteLeaderboardQuery(query)
+
+	inviteEntries, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(RedeemTypeInvitation),
+			redeemcode.UsedByNotNil(),
+			redeemcode.Or(
+				redeemcode.NotesHasPrefix(inviteCodeIssuerNotePrefix),
+				redeemcode.NotesHasPrefix(inviteUsageNotePrefix),
+			),
+		).
+		Order(
+			dbent.Desc(redeemcode.FieldUsedAt),
+			dbent.Desc(redeemcode.FieldID),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(inviteEntries) == 0 {
+		return &InviteLeaderboardPage{
+			Items:     []InviteLeaderboardItem{},
+			Total:     0,
+			Page:      query.Page,
+			PageSize:  query.PageSize,
+			Pages:     1,
+			SortBy:    query.SortBy,
+			SortOrder: query.SortOrder,
+			Status:    query.Status,
+			Search:    query.Search,
+		}, nil
+	}
+
+	type aggregate struct {
+		item          InviteLeaderboardItem
+		invitedUserIDs map[int64]struct{}
+	}
+
+	aggregates := make(map[int64]*aggregate)
+	inviterIDs := make([]int64, 0)
+	for i := range inviteEntries {
+		if inviteEntries[i].UsedBy == nil || *inviteEntries[i].UsedBy <= 0 {
+			continue
+		}
+		note := ""
+		if inviteEntries[i].Notes != nil {
+			note = *inviteEntries[i].Notes
+		}
+		inviterID, ok := parseInviteIssuerUserID(note)
+		if !ok || inviterID <= 0 {
+			continue
+		}
+		agg, exists := aggregates[inviterID]
+		if !exists {
+			agg = &aggregate{
+				item: InviteLeaderboardItem{
+					InviterUserID: inviterID,
+				},
+				invitedUserIDs: make(map[int64]struct{}),
+			}
+			aggregates[inviterID] = agg
+			inviterIDs = append(inviterIDs, inviterID)
+		}
+		invitedUserID := *inviteEntries[i].UsedBy
+		agg.invitedUserIDs[invitedUserID] = struct{}{}
+		if inviteEntries[i].UsedAt != nil {
+			if agg.item.LastInviteAt == nil || inviteEntries[i].UsedAt.After(*agg.item.LastInviteAt) {
+				ts := *inviteEntries[i].UsedAt
+				agg.item.LastInviteAt = &ts
+			}
+		}
+	}
+
+	if len(inviterIDs) == 0 {
+		return &InviteLeaderboardPage{
+			Items:     []InviteLeaderboardItem{},
+			Total:     0,
+			Page:      query.Page,
+			PageSize:  query.PageSize,
+			Pages:     1,
+			SortBy:    query.SortBy,
+			SortOrder: query.SortOrder,
+			Status:    query.Status,
+			Search:    query.Search,
+		}, nil
+	}
+
+	users, err := s.entClient.User.Query().
+		Where(dbuser.IDIn(inviterIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range users {
+		if agg := aggregates[users[i].ID]; agg != nil {
+			agg.item.InviterEmail = users[i].Email
+			agg.item.InviterUsername = users[i].Username
+		}
+	}
+
+	cashbackRecords, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(AdjustmentTypeInviteCashback),
+			redeemcode.UsedByIn(inviterIDs...),
+			redeemcode.NotesHasPrefix(inviteCashbackNotePrefix),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range cashbackRecords {
+		if cashbackRecords[i].UsedBy == nil {
+			continue
+		}
+		agg := aggregates[*cashbackRecords[i].UsedBy]
+		if agg == nil {
+			continue
+		}
+		agg.item.TotalCashback += cashbackRecords[i].Value
+		agg.item.CashbackCount++
+		if cashbackRecords[i].UsedAt != nil {
+			if agg.item.LastCashbackAt == nil || cashbackRecords[i].UsedAt.After(*agg.item.LastCashbackAt) {
+				ts := *cashbackRecords[i].UsedAt
+				agg.item.LastCashbackAt = &ts
+			}
+		}
+	}
+
+	items := make([]InviteLeaderboardItem, 0, len(aggregates))
+	for _, inviterID := range inviterIDs {
+		agg := aggregates[inviterID]
+		if agg == nil {
+			continue
+		}
+		agg.item.InvitedUsers = int64(len(agg.invitedUserIDs))
+		items = append(items, agg.item)
+	}
+
+	items = filterInviteLeaderboard(items, query)
+	sortInviteLeaderboard(items, query.SortBy, query.SortOrder)
+	total := len(items)
+	page, pageSize, pages := paginateInviteList(query.Page, query.PageSize, total)
+	start := (page - 1) * pageSize
+	end := start + pageSize
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+	pagedItems := make([]InviteLeaderboardItem, 0, end-start)
+	if start < end {
+		pagedItems = append(pagedItems, items[start:end]...)
+	}
+
+	return &InviteLeaderboardPage{
+		Items:     pagedItems,
+		Total:     int64(total),
+		Page:      page,
+		PageSize:  pageSize,
+		Pages:     pages,
+		SortBy:    query.SortBy,
+		SortOrder: query.SortOrder,
+		Status:    query.Status,
+		Search:    query.Search,
+	}, nil
+}
+
+func filterInviteLeaderboard(items []InviteLeaderboardItem, query InviteLeaderboardQuery) []InviteLeaderboardItem {
+	if len(items) == 0 {
+		return items
+	}
+	filtered := make([]InviteLeaderboardItem, 0, len(items))
+	search := strings.ToLower(strings.TrimSpace(query.Search))
+	for _, item := range items {
+		if query.Status == inviteStatusRecharged && item.TotalCashback <= 0 {
+			continue
+		}
+		if query.Status == inviteStatusNotRecharged && item.TotalCashback > 0 {
+			continue
+		}
+		if search != "" {
+			idText := strconv.FormatInt(item.InviterUserID, 10)
+			if !strings.Contains(strings.ToLower(item.InviterEmail), search) &&
+				!strings.Contains(strings.ToLower(item.InviterUsername), search) &&
+				!strings.Contains(idText, search) {
+				continue
+			}
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func sortInviteLeaderboard(items []InviteLeaderboardItem, sortBy, sortOrder string) {
+	desc := sortOrder != inviteSortOrderAsc
+	sort.Slice(items, func(i, j int) bool {
+		switch sortBy {
+		case inviteRankingSortInvitedUsers:
+			if items[i].InvitedUsers == items[j].InvitedUsers {
+				return compareOptionalTimes(items[i].LastInviteAt, items[j].LastInviteAt, true)
+			}
+			if desc {
+				return items[i].InvitedUsers > items[j].InvitedUsers
+			}
+			return items[i].InvitedUsers < items[j].InvitedUsers
+		case inviteRankingSortLastInviteAt:
+			return compareOptionalTimes(items[i].LastInviteAt, items[j].LastInviteAt, desc)
+		case inviteRankingSortLastCashback:
+			return compareOptionalTimes(items[i].LastCashbackAt, items[j].LastCashbackAt, desc)
+		default:
+			if items[i].TotalCashback == items[j].TotalCashback {
+				return compareOptionalTimes(items[i].LastCashbackAt, items[j].LastCashbackAt, true)
+			}
+			if desc {
+				return items[i].TotalCashback > items[j].TotalCashback
+			}
+			return items[i].TotalCashback < items[j].TotalCashback
+		}
+	})
 }
 
 // checkRedeemRateLimit 检查用户兑换错误次数是否超限
@@ -727,6 +1344,21 @@ func parseInviteIssuerUserID(note string) (int64, bool) {
 
 func buildInviteCashbackNote(invitedUserID int64) string {
 	return inviteCashbackNotePrefix + strconv.FormatInt(invitedUserID, 10)
+}
+
+func parseInviteCashbackInvitedUserID(note string) (int64, bool) {
+	if !strings.HasPrefix(note, inviteCashbackNotePrefix) {
+		return 0, false
+	}
+	raw := strings.TrimSpace(strings.TrimPrefix(note, inviteCashbackNotePrefix))
+	if raw == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
 }
 
 func sumRedeemValue(ctx context.Context, client *dbent.Client, preds ...predicate.RedeemCode) (float64, error) {

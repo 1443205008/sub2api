@@ -2,6 +2,7 @@ package handler
 
 import (
 	"strconv"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
@@ -112,6 +113,7 @@ func (h *RedeemHandler) GetInviteOverview(c *gin.Context) {
 		return
 	}
 
+	query := service.InviteOverviewQuery{}
 	limit := 10
 	if rawLimit := c.Query("limit"); rawLimit != "" {
 		parsedLimit, err := strconv.Atoi(rawLimit)
@@ -121,11 +123,46 @@ func (h *RedeemHandler) GetInviteOverview(c *gin.Context) {
 		}
 		limit = parsedLimit
 	}
+	query.CodesLimit = limit
+	query.RecordsPage = parsePositiveIntQuery(c.Query("records_page"), 1)
+	query.RecordsPageSize = parsePositiveIntQuery(c.Query("records_page_size"), 10)
+	query.RecordsSortBy = c.DefaultQuery("sort_by", "registered_at")
+	query.RecordsSortOrder = c.DefaultQuery("sort_order", "desc")
+	query.RecordsStatus = c.Query("status")
 
-	overview, err := h.redeemService.GetInviteOverview(c.Request.Context(), subject.UserID, limit)
+	if raw := c.Query("date_from"); raw != "" {
+		parsed, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid date_from")
+			return
+		}
+		query.RecordsDateFrom = &parsed
+	}
+	if raw := c.Query("date_to"); raw != "" {
+		parsed, err := time.Parse("2006-01-02", raw)
+		if err != nil {
+			response.BadRequest(c, "Invalid date_to")
+			return
+		}
+		endExclusive := parsed.Add(24 * time.Hour)
+		query.RecordsDateTo = &endExclusive
+	}
+
+	overview, err := h.redeemService.GetInviteOverview(c.Request.Context(), subject.UserID, query)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
 	response.Success(c, overview)
+}
+
+func parsePositiveIntQuery(raw string, fallback int) int {
+	if raw == "" {
+		return fallback
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return fallback
+	}
+	return value
 }
