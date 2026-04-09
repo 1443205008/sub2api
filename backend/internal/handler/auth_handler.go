@@ -59,6 +59,8 @@ type RegistrationCaptchaResponse struct {
 // SendVerifyCodeRequest 发送验证码请求
 type SendVerifyCodeRequest struct {
 	Email          string `json:"email" binding:"required,email"`
+	CaptchaID      string `json:"captcha_id"`
+	CaptchaCode    string `json:"captcha_code"`
 	TurnstileToken string `json:"turnstile_token"`
 }
 
@@ -121,7 +123,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 		return
 	}
 
-	if err := h.authService.VerifyRegistrationImageCaptcha(c.Request.Context(), req.CaptchaID, req.CaptchaCode); err != nil {
+	if err := h.authService.VerifyRegistrationImageCaptchaForRegister(c.Request.Context(), req.CaptchaID, req.CaptchaCode, req.VerifyCode); err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
@@ -170,6 +172,11 @@ func (h *AuthHandler) SendVerifyCode(c *gin.Context) {
 	var req SendVerifyCodeRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	if err := h.authService.VerifyRegistrationImageCaptcha(c.Request.Context(), req.CaptchaID, req.CaptchaCode); err != nil {
+		response.ErrorFrom(c, err)
 		return
 	}
 

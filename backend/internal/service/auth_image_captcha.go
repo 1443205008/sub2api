@@ -123,6 +123,13 @@ func (s *AuthService) VerifyRegistrationImageCaptcha(ctx context.Context, captch
 	return nil
 }
 
+func (s *AuthService) VerifyRegistrationImageCaptchaForRegister(ctx context.Context, captchaID, captchaCode, verifyCode string) error {
+	if s.IsRegistrationVerifyCodeEnabled(ctx) && strings.TrimSpace(verifyCode) != "" {
+		return nil
+	}
+	return s.VerifyRegistrationImageCaptcha(ctx, captchaID, captchaCode)
+}
+
 func registrationImageCaptchaHMAC(secret, nonce, answer string, expiresAt int64) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(nonce))

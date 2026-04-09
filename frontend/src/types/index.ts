@@ -66,6 +66,8 @@ export interface RegisterRequest {
 
 export interface SendVerifyCodeRequest {
   email: string
+  captcha_id?: string
+  captcha_code?: string
   turnstile_token?: string
 }
 

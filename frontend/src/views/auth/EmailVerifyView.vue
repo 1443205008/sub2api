@@ -327,6 +327,8 @@ async function sendCode(): Promise<void> {
 
     const response = await sendVerifyCode({
       email: email.value,
+      captcha_id: captchaID.value || undefined,
+      captcha_code: captchaCode.value || undefined,
       // 优先使用重发时新获取的 token（因为初始 token 可能已被使用）
       turnstile_token: resendTurnstileToken.value || initialTurnstileToken.value || undefined
     })
