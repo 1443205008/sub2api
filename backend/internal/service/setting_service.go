@@ -159,6 +159,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		SettingKeyHideCcsImportButton,
 		SettingKeyPurchaseSubscriptionEnabled,
 		SettingKeyPurchaseSubscriptionURL,
+		SettingKeyInviteCashbackEnabled,
+		SettingKeyInviteCashbackURL,
+		SettingKeyInviteCashbackRate,
 		SettingKeyCustomMenuItems,
 		SettingKeyCustomEndpoints,
 		SettingKeyLinuxDoConnectEnabled,
@@ -204,6 +207,9 @@ func (s *SettingService) GetPublicSettings(ctx context.Context) (*PublicSettings
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+		InviteCashbackEnabled:            settings[SettingKeyInviteCashbackEnabled] == "true",
+		InviteCashbackURL:                strings.TrimSpace(settings[SettingKeyInviteCashbackURL]),
+		InviteCashbackRate:               parseInviteCashbackRate(settings[SettingKeyInviteCashbackRate]),
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
 		CustomEndpoints:                  settings[SettingKeyCustomEndpoints],
 		LinuxDoOAuthEnabled:              linuxDoEnabled,
@@ -251,6 +257,9 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		HideCcsImportButton              bool            `json:"hide_ccs_import_button"`
 		PurchaseSubscriptionEnabled      bool            `json:"purchase_subscription_enabled"`
 		PurchaseSubscriptionURL          string          `json:"purchase_subscription_url,omitempty"`
+		InviteCashbackEnabled            bool            `json:"invite_cashback_enabled"`
+		InviteCashbackURL                string          `json:"invite_cashback_url,omitempty"`
+		InviteCashbackRate               float64         `json:"invite_cashback_rate"`
 		CustomMenuItems                  json.RawMessage `json:"custom_menu_items"`
 		CustomEndpoints                  json.RawMessage `json:"custom_endpoints"`
 		LinuxDoOAuthEnabled              bool            `json:"linuxdo_oauth_enabled"`
@@ -276,6 +285,9 @@ func (s *SettingService) GetPublicSettingsForInjection(ctx context.Context) (any
 		HideCcsImportButton:              settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:          settings.PurchaseSubscriptionURL,
+		InviteCashbackEnabled:            settings.InviteCashbackEnabled,
+		InviteCashbackURL:                settings.InviteCashbackURL,
+		InviteCashbackRate:               settings.InviteCashbackRate,
 		CustomMenuItems:                  filterUserVisibleMenuItems(settings.CustomMenuItems),
 		CustomEndpoints:                  safeRawJSONArray(settings.CustomEndpoints),
 		LinuxDoOAuthEnabled:              settings.LinuxDoOAuthEnabled,
@@ -332,7 +344,7 @@ func safeRawJSONArray(raw string) json.RawMessage {
 	return json.RawMessage("[]")
 }
 
-// GetFrameSrcOrigins returns deduplicated http(s) origins from purchase_subscription_url
+// GetFrameSrcOrigins returns deduplicated http(s) origins from embedded page URLs
 // and all custom_menu_items URLs. Used by the router layer for CSP frame-src injection.
 func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, error) {
 	settings, err := s.GetPublicSettings(ctx)
@@ -355,6 +367,10 @@ func (s *SettingService) GetFrameSrcOrigins(ctx context.Context) ([]string, erro
 	// purchase subscription URL
 	if settings.PurchaseSubscriptionEnabled {
 		addOrigin(settings.PurchaseSubscriptionURL)
+	}
+	// invite cashback URL
+	if settings.InviteCashbackEnabled {
+		addOrigin(settings.InviteCashbackURL)
 	}
 
 	// all custom menu items (including admin-only, since CSP must allow all iframes)
@@ -401,6 +417,28 @@ func parseCustomMenuItemURLs(raw string) []string {
 		}
 	}
 	return urls
+}
+
+func normalizeInviteCashbackRate(rate float64) float64 {
+	if rate < 0 {
+		return 0
+	}
+	if rate > 100 {
+		return 100
+	}
+	return rate
+}
+
+func parseInviteCashbackRate(raw string) float64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return DefaultInviteCashbackRate
+	}
+	rate, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return DefaultInviteCashbackRate
+	}
+	return normalizeInviteCashbackRate(rate)
 }
 
 // UpdateSettings 更新系统设置
@@ -470,6 +508,9 @@ func (s *SettingService) UpdateSettings(ctx context.Context, settings *SystemSet
 	updates[SettingKeyHideCcsImportButton] = strconv.FormatBool(settings.HideCcsImportButton)
 	updates[SettingKeyPurchaseSubscriptionEnabled] = strconv.FormatBool(settings.PurchaseSubscriptionEnabled)
 	updates[SettingKeyPurchaseSubscriptionURL] = strings.TrimSpace(settings.PurchaseSubscriptionURL)
+	updates[SettingKeyInviteCashbackEnabled] = strconv.FormatBool(settings.InviteCashbackEnabled)
+	updates[SettingKeyInviteCashbackURL] = strings.TrimSpace(settings.InviteCashbackURL)
+	updates[SettingKeyInviteCashbackRate] = strconv.FormatFloat(normalizeInviteCashbackRate(settings.InviteCashbackRate), 'f', 4, 64)
 	updates[SettingKeyCustomMenuItems] = settings.CustomMenuItems
 	updates[SettingKeyCustomEndpoints] = settings.CustomEndpoints
 
@@ -786,6 +827,15 @@ func (s *SettingService) GetDefaultBalance(ctx context.Context) float64 {
 	return s.cfg.Default.UserBalance
 }
 
+// GetInviteCashbackRate 获取邀请返现比例（百分比）。
+func (s *SettingService) GetInviteCashbackRate(ctx context.Context) float64 {
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyInviteCashbackRate)
+	if err != nil {
+		return DefaultInviteCashbackRate
+	}
+	return parseInviteCashbackRate(value)
+}
+
 // GetDefaultSubscriptions 获取新用户默认订阅配置列表。
 func (s *SettingService) GetDefaultSubscriptions(ctx context.Context) []DefaultSubscriptionSetting {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyDefaultSubscriptions)
@@ -817,6 +867,9 @@ func (s *SettingService) InitializeDefaultSettings(ctx context.Context) error {
 		SettingKeySiteLogo:                         "",
 		SettingKeyPurchaseSubscriptionEnabled:      "false",
 		SettingKeyPurchaseSubscriptionURL:          "",
+		SettingKeyInviteCashbackEnabled:            "false",
+		SettingKeyInviteCashbackURL:                "",
+		SettingKeyInviteCashbackRate:               strconv.FormatFloat(DefaultInviteCashbackRate, 'f', 4, 64),
 		SettingKeyCustomMenuItems:                  "[]",
 		SettingKeyCustomEndpoints:                  "[]",
 		SettingKeyDefaultConcurrency:               strconv.Itoa(s.cfg.Default.UserConcurrency),
@@ -882,6 +935,9 @@ func (s *SettingService) parseSettings(settings map[string]string) *SystemSettin
 		HideCcsImportButton:              settings[SettingKeyHideCcsImportButton] == "true",
 		PurchaseSubscriptionEnabled:      settings[SettingKeyPurchaseSubscriptionEnabled] == "true",
 		PurchaseSubscriptionURL:          strings.TrimSpace(settings[SettingKeyPurchaseSubscriptionURL]),
+		InviteCashbackEnabled:            settings[SettingKeyInviteCashbackEnabled] == "true",
+		InviteCashbackURL:                strings.TrimSpace(settings[SettingKeyInviteCashbackURL]),
+		InviteCashbackRate:               parseInviteCashbackRate(settings[SettingKeyInviteCashbackRate]),
 		CustomMenuItems:                  settings[SettingKeyCustomMenuItems],
 		CustomEndpoints:                  settings[SettingKeyCustomEndpoints],
 		BackendModeEnabled:               settings[SettingKeyBackendModeEnabled] == "true",

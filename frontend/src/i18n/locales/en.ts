@@ -352,6 +352,7 @@ export default {
     github: 'GitHub',
     mySubscriptions: 'My Subscriptions',
     buySubscription: 'Recharge / Subscription',
+    inviteCashback: 'Invite Cashback',
     docs: 'Docs',
     sora: 'Sora Studio'
   },
@@ -801,6 +802,7 @@ export default {
     balanceAddedRedeem: 'Balance Added (Redeem)',
     balanceAddedAdmin: 'Balance Added (Admin)',
     balanceDeductedAdmin: 'Balance Deducted (Admin)',
+    inviteCashback: 'Invite Cashback',
     concurrencyAddedRedeem: 'Concurrency Added (Redeem)',
     concurrencyAddedAdmin: 'Concurrency Added (Admin)',
     concurrencyReducedAdmin: 'Concurrency Reduced (Admin)',
@@ -843,6 +845,23 @@ export default {
     passwordTooShort: 'Password must be at least 8 characters long',
     passwordChangeSuccess: 'Password changed successfully',
     passwordChangeFailed: 'Failed to change password',
+    invite: {
+      title: 'Invite Cashback',
+      description: 'Invite friends to register and recharge, and you receive cashback rewards.',
+      invitedUsers: 'Invited Users',
+      cashbackRate: 'Cashback Rate',
+      totalCashback: 'Total Cashback',
+      latestCode: 'Latest Invite Code',
+      noCode: 'No invite code yet',
+      generateCode: 'Generate Code',
+      generating: 'Generating...',
+      generateSuccess: 'Invite code generated successfully',
+      generateFailed: 'Failed to generate invite code',
+      copyCode: 'Copy Code',
+      copySuccess: 'Invite code copied',
+      copyFailed: 'Failed to copy, please copy manually',
+      help: 'When invited users register with your invite code and recharge via redeem codes, cashback is credited to you automatically.'
+    },
     // TOTP 2FA
     totp: {
       title: 'Two-Factor Authentication (2FA)',
@@ -1433,6 +1452,7 @@ export default {
       allTypes: 'All Types',
       typeBalance: 'Balance (Redeem)',
       typeAdminBalance: 'Balance (Admin)',
+      typeInviteCashback: 'Balance (Invite Cashback)',
       typeConcurrency: 'Concurrency (Redeem)',
       typeAdminConcurrency: 'Concurrency (Admin)',
       typeSubscription: 'Subscription',
@@ -3150,7 +3170,8 @@ export default {
         invitation: 'Invitation',
         // Admin adjustment types (created when admin modifies user balance/concurrency)
         admin_balance: 'Balance (Admin)',
-        admin_concurrency: 'Concurrency (Admin)'
+        admin_concurrency: 'Concurrency (Admin)',
+        invite_cashback: 'Balance (Invite Cashback)'
       },
       selectGroup: 'Select Group',
       selectGroupPlaceholder: 'Choose a subscription group',
@@ -4330,6 +4351,19 @@ export default {
         integrationDoc: 'Payment Integration Docs',
         integrationDocHint: 'Covers endpoint specs, idempotency semantics, and code samples'
       },
+      inviteCashback: {
+        title: 'Invite Cashback Page',
+        description: 'Control the sidebar entry for "Invite Cashback" and configure the cashback rate. Leave the URL empty to use the built-in page.',
+        enabled: 'Show Invite Cashback Entry',
+        enabledHint: 'Only shown in standard mode (not simple mode)',
+        rate: 'Cashback Rate (%)',
+        rateHint: 'Set the percentage returned to the inviter after invited users register and recharge.',
+        url: 'Invite Cashback URL',
+        urlPlaceholder: 'https://example.com/invite',
+        urlHint: 'Optional. When set, the page is opened in an iframe; otherwise the built-in page is used.',
+        iframeWarning:
+          '⚠️ iframe note: Some websites block embedding via X-Frame-Options or CSP (frame-ancestors). If the page is blank, provide an "Open in new tab" alternative.'
+      },
       soraClient: {
         title: 'Sora Client',
         description: 'Control whether to show the Sora client entry in the sidebar',
@@ -4797,6 +4831,17 @@ export default {
     notConfiguredTitle: 'Recharge / Subscription URL not configured',
     notConfiguredDesc:
       'The administrator enabled the entry but has not configured a recharge/subscription URL. Please contact admin.'
+  },
+
+  invitePage: {
+    title: 'Invite Cashback',
+    description: 'View invite codes, invited users, and cashback records',
+    openInNewTab: 'Open in new tab',
+    notEnabledTitle: 'Feature not enabled',
+    notEnabledDesc: 'The administrator has not enabled the invite cashback entry. Please contact admin.',
+    notConfiguredTitle: 'Invite Cashback URL not configured',
+    notConfiguredDesc:
+      'The administrator configured an invalid invite cashback page URL. Please contact admin.'
   },
 
   // Custom Page (iframe embed)

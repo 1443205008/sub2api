@@ -499,6 +499,16 @@ const userNavItems = computed((): NavItem[] => {
           }
         ]
       : []),
+    ...(appStore.cachedPublicSettings?.invite_cashback_enabled
+      ? [
+          {
+            path: '/invite',
+            label: t('nav.inviteCashback'),
+            icon: UsersIcon,
+            hideInSimpleMode: true
+          }
+        ]
+      : []),
     { path: '/redeem', label: t('nav.redeem'), icon: GiftIcon, hideInSimpleMode: true },
     { path: '/profile', label: t('nav.profile'), icon: UserIcon },
     ...customMenuItemsForUser.value.map((item): NavItem => ({
@@ -523,6 +533,16 @@ const personalNavItems = computed((): NavItem[] => {
             path: '/purchase',
             label: t('nav.buySubscription'),
             icon: RechargeSubscriptionIcon,
+            hideInSimpleMode: true
+          }
+        ]
+      : []),
+    ...(appStore.cachedPublicSettings?.invite_cashback_enabled
+      ? [
+          {
+            path: '/invite',
+            label: t('nav.inviteCashback'),
+            icon: UsersIcon,
             hideInSimpleMode: true
           }
         ]

@@ -6,10 +6,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
 	dbent "github.com/Wei-Shaw/sub2api/ent"
+	"github.com/Wei-Shaw/sub2api/ent/predicate"
+	"github.com/Wei-Shaw/sub2api/ent/redeemcode"
 	infraerrors "github.com/Wei-Shaw/sub2api/internal/pkg/errors"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
@@ -23,9 +27,14 @@ var (
 )
 
 const (
-	redeemMaxErrorsPerHour  = 20
-	redeemRateLimitDuration = time.Hour
-	redeemLockDuration      = 10 * time.Second // 锁超时时间，防止死锁
+	redeemMaxErrorsPerHour      = 20
+	redeemRateLimitDuration     = time.Hour
+	redeemLockDuration          = 10 * time.Second // 锁超时时间，防止死锁
+	defaultInviteOverviewLimit  = 10
+	maxInviteOverviewLimit      = 50
+	inviteCodeIssuerNotePrefix  = "invite_issuer_user_id:"
+	inviteCashbackNotePrefix    = "invite_cashback_from_user_id:"
+	inviteCashbackAmountDecimal = 1e8
 )
 
 // RedeemCache defines cache operations for redeem service
@@ -71,6 +80,21 @@ type RedeemCodeResponse struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type InviteCodeItem struct {
+	Code      string     `json:"code"`
+	Status    string     `json:"status"`
+	UsedBy    *int64     `json:"used_by"`
+	UsedAt    *time.Time `json:"used_at"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+type InviteOverview struct {
+	CashbackRate  float64          `json:"cashback_rate"`
+	InvitedUsers  int64            `json:"invited_users"`
+	TotalCashback float64          `json:"total_cashback"`
+	Codes         []InviteCodeItem `json:"codes"`
+}
+
 // RedeemService 兑换码服务
 type RedeemService struct {
 	redeemRepo           RedeemCodeRepository
@@ -79,6 +103,7 @@ type RedeemService struct {
 	cache                RedeemCache
 	billingCacheService  *BillingCacheService
 	entClient            *dbent.Client
+	settingService       *SettingService
 	authCacheInvalidator APIKeyAuthCacheInvalidator
 }
 
@@ -90,6 +115,7 @@ func NewRedeemService(
 	cache RedeemCache,
 	billingCacheService *BillingCacheService,
 	entClient *dbent.Client,
+	settingService *SettingService,
 	authCacheInvalidator APIKeyAuthCacheInvalidator,
 ) *RedeemService {
 	return &RedeemService{
@@ -99,6 +125,7 @@ func NewRedeemService(
 		cache:                cache,
 		billingCacheService:  billingCacheService,
 		entClient:            entClient,
+		settingService:       settingService,
 		authCacheInvalidator: authCacheInvalidator,
 	}
 }
@@ -199,6 +226,105 @@ func (s *RedeemService) CreateCode(ctx context.Context, code *RedeemCode) error 
 		return fmt.Errorf("create redeem code: %w", err)
 	}
 	return nil
+}
+
+// GenerateInviteCode 为用户生成邀请码（类型: invitation）。
+func (s *RedeemService) GenerateInviteCode(ctx context.Context, issuerUserID int64) (*InviteCodeItem, error) {
+	if issuerUserID <= 0 {
+		return nil, infraerrors.BadRequest("INVALID_USER_ID", "invalid user id")
+	}
+	if _, err := s.userRepo.GetByID(ctx, issuerUserID); err != nil {
+		return nil, fmt.Errorf("get issuer user: %w", err)
+	}
+
+	codeValue, err := GenerateRedeemCode()
+	if err != nil {
+		return nil, fmt.Errorf("generate invite code: %w", err)
+	}
+
+	code := &RedeemCode{
+		Code:   codeValue,
+		Type:   RedeemTypeInvitation,
+		Value:  0,
+		Status: StatusUnused,
+		Notes:  buildInviteIssuerNote(issuerUserID),
+	}
+	if err := s.redeemRepo.Create(ctx, code); err != nil {
+		return nil, fmt.Errorf("create invite code: %w", err)
+	}
+
+	return &InviteCodeItem{
+		Code:      code.Code,
+		Status:    code.Status,
+		UsedBy:    code.UsedBy,
+		UsedAt:    code.UsedAt,
+		CreatedAt: code.CreatedAt,
+	}, nil
+}
+
+// GetInviteOverview 返回用户邀请返现概览。
+func (s *RedeemService) GetInviteOverview(ctx context.Context, issuerUserID int64, limit int) (*InviteOverview, error) {
+	if s.entClient == nil {
+		return nil, infraerrors.InternalServer("INTERNAL_ERROR", "ent client not configured")
+	}
+	if limit <= 0 {
+		limit = defaultInviteOverviewLimit
+	}
+	if limit > maxInviteOverviewLimit {
+		limit = maxInviteOverviewLimit
+	}
+
+	note := buildInviteIssuerNote(issuerUserID)
+	codes, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(RedeemTypeInvitation),
+			redeemcode.NotesEQ(note),
+		).
+		Order(dbent.Desc(redeemcode.FieldID)).
+		Limit(limit).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list invite codes: %w", err)
+	}
+
+	outCodes := make([]InviteCodeItem, 0, len(codes))
+	for i := range codes {
+		outCodes = append(outCodes, InviteCodeItem{
+			Code:      codes[i].Code,
+			Status:    codes[i].Status,
+			UsedBy:    codes[i].UsedBy,
+			UsedAt:    codes[i].UsedAt,
+			CreatedAt: codes[i].CreatedAt,
+		})
+	}
+
+	invitedUsers, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(RedeemTypeInvitation),
+			redeemcode.NotesEQ(note),
+			redeemcode.StatusEQ(StatusUsed),
+			redeemcode.UsedByNotNil(),
+		).
+		Count(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("count invited users: %w", err)
+	}
+
+	totalCashback, err := sumRedeemValue(ctx, s.entClient,
+		redeemcode.TypeEQ(AdjustmentTypeInviteCashback),
+		redeemcode.UsedByEQ(issuerUserID),
+		redeemcode.ValueGT(0),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sum invite cashback: %w", err)
+	}
+
+	return &InviteOverview{
+		CashbackRate:  s.getInviteCashbackRate(ctx),
+		InvitedUsers:  int64(invitedUsers),
+		TotalCashback: totalCashback,
+		Codes:         outCodes,
+	}, nil
 }
 
 // checkRedeemRateLimit 检查用户兑换错误次数是否超限
@@ -313,6 +439,7 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 	}
 
 	// 执行兑换逻辑（兑换码已被锁定，此时可安全操作）
+	var inviteCashbackReceiverID *int64
 	switch redeemCode.Type {
 	case RedeemTypeBalance:
 		amount := redeemCode.Value
@@ -322,6 +449,10 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 		}
 		if err := s.userRepo.UpdateBalance(txCtx, userID, amount); err != nil {
 			return nil, fmt.Errorf("update user balance: %w", err)
+		}
+		inviteCashbackReceiverID, err = s.applyInviteCashback(txCtx, userID, amount)
+		if err != nil {
+			return nil, fmt.Errorf("apply invite cashback: %w", err)
 		}
 
 	case RedeemTypeConcurrency:
@@ -368,6 +499,9 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 
 	// 事务提交成功后失效缓存
 	s.invalidateRedeemCaches(ctx, userID, redeemCode)
+	if inviteCashbackReceiverID != nil {
+		s.invalidateUserBalanceCache(ctx, *inviteCashbackReceiverID)
+	}
 
 	// 重新获取更新后的兑换码
 	redeemCode, err = s.redeemRepo.GetByID(ctx, redeemCode.ID)
@@ -382,17 +516,7 @@ func (s *RedeemService) Redeem(ctx context.Context, userID int64, code string) (
 func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64, redeemCode *RedeemCode) {
 	switch redeemCode.Type {
 	case RedeemTypeBalance:
-		if s.authCacheInvalidator != nil {
-			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
-		}
-		if s.billingCacheService == nil {
-			return
-		}
-		go func() {
-			cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-			_ = s.billingCacheService.InvalidateUserBalance(cacheCtx, userID)
-		}()
+		s.invalidateUserBalanceCache(ctx, userID)
 	case RedeemTypeConcurrency:
 		if s.authCacheInvalidator != nil {
 			s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
@@ -416,6 +540,147 @@ func (s *RedeemService) invalidateRedeemCaches(ctx context.Context, userID int64
 			}()
 		}
 	}
+}
+
+func (s *RedeemService) invalidateUserBalanceCache(ctx context.Context, userID int64) {
+	if s.authCacheInvalidator != nil {
+		s.authCacheInvalidator.InvalidateAuthCacheByUserID(ctx, userID)
+	}
+	if s.billingCacheService == nil {
+		return
+	}
+	go func() {
+		cacheCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.billingCacheService.InvalidateUserBalance(cacheCtx, userID)
+	}()
+}
+
+func (s *RedeemService) applyInviteCashback(ctx context.Context, invitedUserID int64, rechargeAmount float64) (*int64, error) {
+	if rechargeAmount <= 0 {
+		return nil, nil
+	}
+
+	inviterID, err := s.findInviterByInvitedUser(ctx, invitedUserID)
+	if err != nil {
+		return nil, err
+	}
+	if inviterID == nil {
+		return nil, nil
+	}
+
+	cashbackRate := s.getInviteCashbackRate(ctx) / 100
+	cashbackAmount := math.Round(rechargeAmount*cashbackRate*inviteCashbackAmountDecimal) / inviteCashbackAmountDecimal
+	if cashbackAmount <= 0 {
+		return nil, nil
+	}
+
+	if err := s.userRepo.UpdateBalance(ctx, *inviterID, cashbackAmount); err != nil {
+		if errors.Is(err, ErrUserNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("update inviter balance: %w", err)
+	}
+
+	codeValue, err := GenerateRedeemCode()
+	if err != nil {
+		return nil, fmt.Errorf("generate cashback record code: %w", err)
+	}
+	now := time.Now()
+	record := &RedeemCode{
+		Code:   codeValue,
+		Type:   AdjustmentTypeInviteCashback,
+		Value:  cashbackAmount,
+		Status: StatusUsed,
+		UsedBy: inviterID,
+		UsedAt: &now,
+		Notes:  buildInviteCashbackNote(invitedUserID),
+	}
+	if err := s.redeemRepo.Create(ctx, record); err != nil {
+		return nil, fmt.Errorf("create cashback record: %w", err)
+	}
+
+	return inviterID, nil
+}
+
+func (s *RedeemService) getInviteCashbackRate(ctx context.Context) float64 {
+	if s.settingService == nil {
+		return DefaultInviteCashbackRate
+	}
+	return s.settingService.GetInviteCashbackRate(ctx)
+}
+
+func (s *RedeemService) findInviterByInvitedUser(ctx context.Context, invitedUserID int64) (*int64, error) {
+	if s.entClient == nil || invitedUserID <= 0 {
+		return nil, nil
+	}
+
+	invitation, err := s.entClient.RedeemCode.Query().
+		Where(
+			redeemcode.TypeEQ(RedeemTypeInvitation),
+			redeemcode.UsedByEQ(invitedUserID),
+			redeemcode.NotesHasPrefix(inviteCodeIssuerNotePrefix),
+		).
+		Order(
+			dbent.Desc(redeemcode.FieldUsedAt),
+			dbent.Desc(redeemcode.FieldID),
+		).
+		First(ctx)
+	if err != nil {
+		if dbent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("query invitation record: %w", err)
+	}
+
+	if invitation.Notes == nil {
+		return nil, nil
+	}
+	inviterID, ok := parseInviteIssuerUserID(*invitation.Notes)
+	if !ok || inviterID == invitedUserID {
+		return nil, nil
+	}
+	return &inviterID, nil
+}
+
+func buildInviteIssuerNote(userID int64) string {
+	return inviteCodeIssuerNotePrefix + strconv.FormatInt(userID, 10)
+}
+
+func parseInviteIssuerUserID(note string) (int64, bool) {
+	if !strings.HasPrefix(note, inviteCodeIssuerNotePrefix) {
+		return 0, false
+	}
+	raw := strings.TrimSpace(strings.TrimPrefix(note, inviteCodeIssuerNotePrefix))
+	if raw == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, false
+	}
+	return id, true
+}
+
+func buildInviteCashbackNote(invitedUserID int64) string {
+	return inviteCashbackNotePrefix + strconv.FormatInt(invitedUserID, 10)
+}
+
+func sumRedeemValue(ctx context.Context, client *dbent.Client, preds ...predicate.RedeemCode) (float64, error) {
+	var result []struct {
+		Sum float64 `json:"sum"`
+	}
+	err := client.RedeemCode.Query().
+		Where(preds...).
+		Aggregate(dbent.As(dbent.Sum(redeemcode.FieldValue), "sum")).
+		Scan(ctx, &result)
+	if err != nil {
+		return 0, err
+	}
+	if len(result) == 0 {
+		return 0, nil
+	}
+	return result[0].Sum, nil
 }
 
 // GetByID 根据ID获取兑换码

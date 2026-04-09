@@ -106,6 +106,9 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		HideCcsImportButton:                  settings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:          settings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:              settings.PurchaseSubscriptionURL,
+		InviteCashbackEnabled:                settings.InviteCashbackEnabled,
+		InviteCashbackURL:                    settings.InviteCashbackURL,
+		InviteCashbackRate:                   settings.InviteCashbackRate,
 		CustomMenuItems:                      dto.ParseCustomMenuItems(settings.CustomMenuItems),
 		CustomEndpoints:                      dto.ParseCustomEndpoints(settings.CustomEndpoints),
 		DefaultConcurrency:                   settings.DefaultConcurrency,
@@ -174,6 +177,9 @@ type UpdateSettingsRequest struct {
 	HideCcsImportButton         bool                  `json:"hide_ccs_import_button"`
 	PurchaseSubscriptionEnabled *bool                 `json:"purchase_subscription_enabled"`
 	PurchaseSubscriptionURL     *string               `json:"purchase_subscription_url"`
+	InviteCashbackEnabled       *bool                 `json:"invite_cashback_enabled"`
+	InviteCashbackURL           *string               `json:"invite_cashback_url"`
+	InviteCashbackRate          *float64              `json:"invite_cashback_rate"`
 	CustomMenuItems             *[]dto.CustomMenuItem `json:"custom_menu_items"`
 	CustomEndpoints             *[]dto.CustomEndpoint `json:"custom_endpoints"`
 
@@ -346,6 +352,29 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 	} else if purchaseURL != "" {
 		if err := config.ValidateAbsoluteHTTPURL(purchaseURL); err != nil {
 			response.BadRequest(c, "Purchase Subscription URL must be an absolute http(s) URL")
+			return
+		}
+	}
+
+	inviteCashbackEnabled := previousSettings.InviteCashbackEnabled
+	if req.InviteCashbackEnabled != nil {
+		inviteCashbackEnabled = *req.InviteCashbackEnabled
+	}
+	inviteCashbackURL := previousSettings.InviteCashbackURL
+	if req.InviteCashbackURL != nil {
+		inviteCashbackURL = strings.TrimSpace(*req.InviteCashbackURL)
+	}
+	inviteCashbackRate := previousSettings.InviteCashbackRate
+	if req.InviteCashbackRate != nil {
+		inviteCashbackRate = *req.InviteCashbackRate
+	}
+	if inviteCashbackRate < 0 || inviteCashbackRate > 100 {
+		response.BadRequest(c, "Invite Cashback Rate must be between 0 and 100")
+		return
+	}
+	if inviteCashbackURL != "" {
+		if err := config.ValidateAbsoluteHTTPURL(inviteCashbackURL); err != nil {
+			response.BadRequest(c, "Invite Cashback URL must be an absolute http(s) URL")
 			return
 		}
 	}
@@ -562,6 +591,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:              req.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:      purchaseEnabled,
 		PurchaseSubscriptionURL:          purchaseURL,
+		InviteCashbackEnabled:            inviteCashbackEnabled,
+		InviteCashbackURL:                inviteCashbackURL,
+		InviteCashbackRate:               inviteCashbackRate,
 		CustomMenuItems:                  customMenuJSON,
 		CustomEndpoints:                  customEndpointsJSON,
 		DefaultConcurrency:               req.DefaultConcurrency,
@@ -671,6 +703,9 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		HideCcsImportButton:                  updatedSettings.HideCcsImportButton,
 		PurchaseSubscriptionEnabled:          updatedSettings.PurchaseSubscriptionEnabled,
 		PurchaseSubscriptionURL:              updatedSettings.PurchaseSubscriptionURL,
+		InviteCashbackEnabled:                updatedSettings.InviteCashbackEnabled,
+		InviteCashbackURL:                    updatedSettings.InviteCashbackURL,
+		InviteCashbackRate:                   updatedSettings.InviteCashbackRate,
 		CustomMenuItems:                      dto.ParseCustomMenuItems(updatedSettings.CustomMenuItems),
 		CustomEndpoints:                      dto.ParseCustomEndpoints(updatedSettings.CustomEndpoints),
 		DefaultConcurrency:                   updatedSettings.DefaultConcurrency,
@@ -861,6 +896,15 @@ func diffSettings(before *service.SystemSettings, after *service.SystemSettings,
 	}
 	if before.PurchaseSubscriptionURL != after.PurchaseSubscriptionURL {
 		changed = append(changed, "purchase_subscription_url")
+	}
+	if before.InviteCashbackEnabled != after.InviteCashbackEnabled {
+		changed = append(changed, "invite_cashback_enabled")
+	}
+	if before.InviteCashbackURL != after.InviteCashbackURL {
+		changed = append(changed, "invite_cashback_url")
+	}
+	if before.InviteCashbackRate != after.InviteCashbackRate {
+		changed = append(changed, "invite_cashback_rate")
 	}
 	if before.CustomMenuItems != after.CustomMenuItems {
 		changed = append(changed, "custom_menu_items")

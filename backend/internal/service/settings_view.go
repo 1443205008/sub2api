@@ -41,6 +41,9 @@ type SystemSettings struct {
 	HideCcsImportButton         bool
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
+	InviteCashbackEnabled       bool
+	InviteCashbackURL           string
+	InviteCashbackRate          float64
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 
@@ -106,6 +109,9 @@ type PublicSettings struct {
 
 	PurchaseSubscriptionEnabled bool
 	PurchaseSubscriptionURL     string
+	InviteCashbackEnabled       bool
+	InviteCashbackURL           string
+	InviteCashbackRate          float64
 	CustomMenuItems             string // JSON array of custom menu items
 	CustomEndpoints             string // JSON array of custom endpoints
 

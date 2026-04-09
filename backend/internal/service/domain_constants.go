@@ -53,6 +53,7 @@ const (
 const (
 	AdjustmentTypeAdminBalance     = domain.AdjustmentTypeAdminBalance     // 管理员调整余额
 	AdjustmentTypeAdminConcurrency = domain.AdjustmentTypeAdminConcurrency // 管理员调整并发数
+	AdjustmentTypeInviteCashback   = domain.AdjustmentTypeInviteCashback   // 邀请充值返现
 )
 
 // Group subscription type constants
@@ -116,6 +117,9 @@ const (
 	SettingKeyHideCcsImportButton         = "hide_ccs_import_button"        // 是否隐藏 API Keys 页面的导入 CCS 按钮
 	SettingKeyPurchaseSubscriptionEnabled = "purchase_subscription_enabled" // 是否展示"购买订阅"页面入口
 	SettingKeyPurchaseSubscriptionURL     = "purchase_subscription_url"     // "购买订阅"页面 URL（作为 iframe src）
+	SettingKeyInviteCashbackEnabled       = "invite_cashback_enabled"       // 是否展示"邀请返现"页面入口
+	SettingKeyInviteCashbackURL           = "invite_cashback_url"           // "邀请返现"页面 URL（为空时使用内置页面）
+	SettingKeyInviteCashbackRate          = "invite_cashback_rate"          // 邀请返现比例（百分比）
 	SettingKeyCustomMenuItems             = "custom_menu_items"             // 自定义菜单项（JSON 数组）
 	SettingKeyCustomEndpoints             = "custom_endpoints"              // 自定义端点列表（JSON 数组）
 
@@ -219,6 +223,8 @@ const (
 	// SettingKeyEnableMetadataPassthrough 是否透传客户端原始 metadata.user_id（默认 false）
 	SettingKeyEnableMetadataPassthrough = "enable_metadata_passthrough"
 )
+
+const DefaultInviteCashbackRate = 10.0
 
 // AdminAPIKeyPrefix is the prefix for admin API keys (distinct from user "sk-" keys).
 const AdminAPIKeyPrefix = "admin-"

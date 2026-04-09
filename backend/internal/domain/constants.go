@@ -51,6 +51,7 @@ const (
 const (
 	AdjustmentTypeAdminBalance     = "admin_balance"     // 管理员调整余额
 	AdjustmentTypeAdminConcurrency = "admin_concurrency" // 管理员调整并发数
+	AdjustmentTypeInviteCashback   = "invite_cashback"   // 邀请充值返现
 )
 
 // Group subscription type constants

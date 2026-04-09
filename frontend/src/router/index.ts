@@ -202,6 +202,18 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/invite',
+    name: 'InviteCashback',
+    component: () => import('@/views/user/InviteCashbackView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: false,
+      title: 'Invite Cashback',
+      titleKey: 'invitePage.title',
+      descriptionKey: 'invitePage.description'
+    }
+  },
+  {
     path: '/custom/:id',
     name: 'CustomPage',
     component: () => import('@/views/user/CustomPageView.vue'),

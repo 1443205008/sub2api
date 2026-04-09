@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"strconv"
+
 	"github.com/Wei-Shaw/sub2api/internal/handler/dto"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	middleware2 "github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -82,4 +84,48 @@ func (h *RedeemHandler) GetHistory(c *gin.Context) {
 		out = append(out, *dto.RedeemCodeFromService(&codes[i]))
 	}
 	response.Success(c, out)
+}
+
+// GenerateInviteCode 生成当前用户的邀请码
+// POST /api/v1/redeem/invite-code
+func (h *RedeemHandler) GenerateInviteCode(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	code, err := h.redeemService.GenerateInviteCode(c.Request.Context(), subject.UserID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, code)
+}
+
+// GetInviteOverview 获取当前用户邀请返现概览
+// GET /api/v1/redeem/invite-overview
+func (h *RedeemHandler) GetInviteOverview(c *gin.Context) {
+	subject, ok := middleware2.GetAuthSubjectFromContext(c)
+	if !ok {
+		response.Unauthorized(c, "User not authenticated")
+		return
+	}
+
+	limit := 10
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		parsedLimit, err := strconv.Atoi(rawLimit)
+		if err != nil || parsedLimit <= 0 {
+			response.BadRequest(c, "Invalid limit")
+			return
+		}
+		limit = parsedLimit
+	}
+
+	overview, err := h.redeemService.GetInviteOverview(c.Request.Context(), subject.UserID, limit)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, overview)
 }

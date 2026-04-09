@@ -352,6 +352,7 @@ export default {
     github: 'GitHub',
     mySubscriptions: '我的订阅',
     buySubscription: '充值/订阅',
+    inviteCashback: '邀请返现',
     docs: '文档',
     sora: 'Sora 创作'
   },
@@ -806,6 +807,7 @@ export default {
     balanceAddedRedeem: '余额充值（兑换）',
     balanceAddedAdmin: '余额充值（管理员）',
     balanceDeductedAdmin: '余额扣除（管理员）',
+    inviteCashback: '邀请返现',
     concurrencyAddedRedeem: '并发增加（兑换）',
     concurrencyAddedAdmin: '并发增加（管理员）',
     concurrencyReducedAdmin: '并发减少（管理员）',
@@ -848,6 +850,23 @@ export default {
     passwordTooShort: '密码至少需要 8 个字符',
     passwordChangeSuccess: '密码修改成功',
     passwordChangeFailed: '密码修改失败',
+    invite: {
+      title: '邀请充值返现',
+      description: '邀请好友注册并充值，你将获得返现奖励。',
+      invitedUsers: '邀请用户数',
+      cashbackRate: '返现比例',
+      totalCashback: '累计返现',
+      latestCode: '最新邀请码',
+      noCode: '暂无邀请码',
+      generateCode: '生成邀请码',
+      generating: '生成中...',
+      generateSuccess: '邀请码生成成功',
+      generateFailed: '邀请码生成失败',
+      copyCode: '复制邀请码',
+      copySuccess: '邀请码已复制',
+      copyFailed: '复制失败，请手动复制',
+      help: '被邀请用户通过邀请码注册并使用兑换码充值后，你将自动获得返现。'
+    },
     // TOTP 2FA
     totp: {
       title: '双因素认证 (2FA)',
@@ -1493,6 +1512,7 @@ export default {
       allTypes: '全部类型',
       typeBalance: '余额（兑换码）',
       typeAdminBalance: '余额（管理员调整）',
+      typeInviteCashback: '余额（邀请返现）',
       typeConcurrency: '并发（兑换码）',
       typeAdminConcurrency: '并发（管理员调整）',
       typeSubscription: '订阅',
@@ -3237,7 +3257,8 @@ export default {
         invitation: '邀请码',
         // 管理员在用户管理页面调整余额/并发时产生的记录
         admin_balance: '余额（管理员）',
-        admin_concurrency: '并发数（管理员）'
+        admin_concurrency: '并发数（管理员）',
+        invite_cashback: '余额（邀请返现）'
       },
       // 用于选择器和筛选器的直接键
       balance: '余额',
@@ -4495,6 +4516,19 @@ export default {
         integrationDoc: '支付集成文档',
         integrationDocHint: '包含接口说明、幂等语义及示例代码'
       },
+      inviteCashback: {
+        title: '邀请返现页面',
+        description: '控制侧边栏中的“邀请返现”入口，并设置返现比例。URL 留空时使用系统内置邀请返现页。',
+        enabled: '显示邀请返现入口',
+        enabledHint: '仅在标准模式（非简单模式）下展示',
+        rate: '返现比例 (%)',
+        rateHint: '设置邀请人获得的返现百分比。用户邀请他人注册并充值后，将按该比例返现。',
+        url: '邀请返现页面 URL',
+        urlPlaceholder: 'https://example.com/invite',
+        urlHint: '可选。填写后通过 iframe 打开该页面；留空则使用系统内置页面。',
+        iframeWarning:
+          '⚠️ iframe 提示：部分网站会通过 X-Frame-Options 或 CSP（frame-ancestors）禁止被 iframe 嵌入，出现空白时可引导用户使用“新窗口打开”。'
+      },
       soraClient: {
         title: 'Sora 客户端',
         description: '控制是否在侧边栏展示 Sora 客户端入口',
@@ -4960,6 +4994,16 @@ export default {
     notEnabledDesc: '管理员暂未开启充值/订阅入口，请联系管理员。',
     notConfiguredTitle: '充值/订阅链接未配置',
     notConfiguredDesc: '管理员已开启入口，但尚未配置充值/订阅链接，请联系管理员。'
+  },
+
+  invitePage: {
+    title: '邀请返现',
+    description: '查看邀请码、邀请人数与返现记录',
+    openInNewTab: '新窗口打开',
+    notEnabledTitle: '该功能未开启',
+    notEnabledDesc: '管理员暂未开启邀请返现入口，请联系管理员。',
+    notConfiguredTitle: '邀请返现链接未配置',
+    notConfiguredDesc: '管理员配置的邀请返现页面链接无效，请联系管理员。'
   },
 
   // Custom Page (iframe embed)

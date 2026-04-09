@@ -125,11 +125,14 @@ func (s *AuthService) RegisterWithVerification(ctx context.Context, email, passw
 	if err := s.validateRegistrationEmailPolicy(ctx, email); err != nil {
 		return "", nil, err
 	}
+	invitationCode = strings.TrimSpace(invitationCode)
 
 	// 检查是否需要邀请码
 	var invitationRedeemCode *RedeemCode
-	if s.settingService != nil && s.settingService.IsInvitationCodeEnabled(ctx) {
-		if invitationCode == "" {
+	requireInvitationCode := s.settingService != nil && s.settingService.IsInvitationCodeEnabled(ctx)
+	shouldValidateInvitationCode := strings.TrimSpace(invitationCode) != "" || requireInvitationCode
+	if shouldValidateInvitationCode {
+		if requireInvitationCode && invitationCode == "" {
 			return "", nil, ErrInvitationCodeRequired
 		}
 		// 验证邀请码
@@ -549,6 +552,7 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 	if len([]rune(username)) > 100 {
 		username = string([]rune(username)[:100])
 	}
+	invitationCode = strings.TrimSpace(invitationCode)
 
 	user, err := s.userRepo.GetByEmail(ctx, email)
 	if err != nil {
@@ -560,8 +564,10 @@ func (s *AuthService) LoginOrRegisterOAuthWithTokenPair(ctx context.Context, ema
 
 			// 检查是否需要邀请码
 			var invitationRedeemCode *RedeemCode
-			if s.settingService != nil && s.settingService.IsInvitationCodeEnabled(ctx) {
-				if invitationCode == "" {
+			requireInvitationCode := s.settingService != nil && s.settingService.IsInvitationCodeEnabled(ctx)
+			shouldValidateInvitationCode := invitationCode != "" || requireInvitationCode
+			if shouldValidateInvitationCode {
+				if requireInvitationCode && invitationCode == "" {
 					return nil, nil, ErrOAuthInvitationRequired
 				}
 				redeemCode, err := s.redeemRepo.GetByCode(ctx, invitationCode)

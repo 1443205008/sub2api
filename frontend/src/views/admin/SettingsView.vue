@@ -1679,6 +1679,66 @@
           </div>
         </div>
 
+        <!-- Invite Cashback Page -->
+        <div class="card">
+          <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.settings.inviteCashback.title') }}
+            </h2>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.settings.inviteCashback.description') }}
+            </p>
+          </div>
+          <div class="space-y-6 p-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="font-medium text-gray-900 dark:text-white">{{
+                  t('admin.settings.inviteCashback.enabled')
+                }}</label>
+                <p class="text-sm text-gray-500 dark:text-gray-400">
+                  {{ t('admin.settings.inviteCashback.enabledHint') }}
+                </p>
+              </div>
+              <Toggle v-model="form.invite_cashback_enabled" />
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.inviteCashback.rate') }}
+              </label>
+              <input
+                v-model.number="form.invite_cashback_rate"
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                class="input w-full max-w-xs"
+              />
+              <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.inviteCashback.rateHint') }}
+              </p>
+            </div>
+
+            <div>
+              <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ t('admin.settings.inviteCashback.url') }}
+              </label>
+              <input
+                v-model="form.invite_cashback_url"
+                type="url"
+                class="input font-mono text-sm"
+                :placeholder="t('admin.settings.inviteCashback.urlPlaceholder')"
+              />
+              <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                {{ t('admin.settings.inviteCashback.urlHint') }}
+              </p>
+              <p class="mt-2 text-xs text-amber-600 dark:text-amber-400">
+                {{ t('admin.settings.inviteCashback.iframeWarning') }}
+              </p>
+            </div>
+          </div>
+        </div>
+
         <!-- Custom Menu Items -->
         <div class="card">
           <div class="border-b border-gray-100 px-6 py-4 dark:border-dark-700">
@@ -2205,6 +2265,9 @@ const form = reactive<SettingsForm>({
   hide_ccs_import_button: false,
   purchase_subscription_enabled: false,
   purchase_subscription_url: '',
+  invite_cashback_enabled: false,
+  invite_cashback_url: '',
+  invite_cashback_rate: 10,
   custom_menu_items: [] as Array<{id: string; label: string; icon_svg: string; url: string; visibility: 'user' | 'admin'; sort_order: number}>,
   custom_endpoints: [] as Array<{name: string; endpoint: string; description: string}>,
   frontend_url: '',
@@ -2503,6 +2566,17 @@ async function saveSettings() {
     } else if (!isValidHttpUrl(form.purchase_subscription_url)) {
       form.purchase_subscription_url = ''
     }
+    // Invite cashback URL: optional. If empty, the built-in page is used.
+    if (form.invite_cashback_url && !isValidHttpUrl(form.invite_cashback_url)) {
+      appStore.showError(t('admin.settings.inviteCashback.url') + ': must be an absolute http(s) URL (e.g. https://example.com)')
+      saving.value = false
+      return
+    }
+    if (Number.isNaN(form.invite_cashback_rate) || form.invite_cashback_rate < 0 || form.invite_cashback_rate > 100) {
+      appStore.showError(t('admin.settings.inviteCashback.rate') + ': must be between 0 and 100')
+      saving.value = false
+      return
+    }
 
     const payload: UpdateSettingsRequest = {
       registration_enabled: form.registration_enabled,
@@ -2528,6 +2602,9 @@ async function saveSettings() {
       hide_ccs_import_button: form.hide_ccs_import_button,
       purchase_subscription_enabled: form.purchase_subscription_enabled,
       purchase_subscription_url: form.purchase_subscription_url,
+      invite_cashback_enabled: form.invite_cashback_enabled,
+      invite_cashback_url: form.invite_cashback_url,
+      invite_cashback_rate: form.invite_cashback_rate,
       custom_menu_items: form.custom_menu_items,
       custom_endpoints: form.custom_endpoints,
       frontend_url: form.frontend_url,

@@ -25,6 +25,21 @@ export interface RedeemHistoryItem {
   }
 }
 
+export interface InviteCodeItem {
+  code: string
+  status: string
+  used_by?: number
+  used_at?: string
+  created_at: string
+}
+
+export interface InviteOverview {
+  cashback_rate: number
+  invited_users: number
+  total_cashback: number
+  codes: InviteCodeItem[]
+}
+
 /**
  * Redeem a code
  * @param code - Redeem code string
@@ -59,9 +74,29 @@ export async function getHistory(): Promise<RedeemHistoryItem[]> {
   return data
 }
 
+/**
+ * Generate an invitation code for current user
+ */
+export async function generateInviteCode(): Promise<InviteCodeItem> {
+  const { data } = await apiClient.post<InviteCodeItem>('/redeem/invite-code')
+  return data
+}
+
+/**
+ * Get invite cashback overview for current user
+ */
+export async function getInviteOverview(limit = 10): Promise<InviteOverview> {
+  const { data } = await apiClient.get<InviteOverview>('/redeem/invite-overview', {
+    params: { limit }
+  })
+  return data
+}
+
 export const redeemAPI = {
   redeem,
-  getHistory
+  getHistory,
+  generateInviteCode,
+  getInviteOverview
 }
 
 export default redeemAPI
