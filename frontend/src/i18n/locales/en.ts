@@ -1377,6 +1377,7 @@ export default {
         email: 'Email',
         username: 'Username',
         notes: 'Notes',
+        registrationIp: 'Registration IP',
         role: 'Role',
         groups: 'Groups',
         subscriptions: 'Subscriptions',

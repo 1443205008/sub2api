@@ -94,6 +94,13 @@ func (r *userRepository) GetByID(ctx context.Context, id int64) (*service.User, 
 	}
 
 	out := userEntityToService(m)
+	registrationIPs, err := r.loadRegistrationIPs(ctx, []int64{id})
+	if err != nil {
+		return nil, err
+	}
+	if registrationIP, ok := registrationIPs[id]; ok {
+		out.RegistrationIP = registrationIP
+	}
 	groups, err := r.loadAllowedGroups(ctx, []int64{id})
 	if err != nil {
 		return nil, err
@@ -111,6 +118,13 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*service
 	}
 
 	out := userEntityToService(m)
+	registrationIPs, err := r.loadRegistrationIPs(ctx, []int64{m.ID})
+	if err != nil {
+		return nil, err
+	}
+	if registrationIP, ok := registrationIPs[m.ID]; ok {
+		out.RegistrationIP = registrationIP
+	}
 	groups, err := r.loadAllowedGroups(ctx, []int64{m.ID})
 	if err != nil {
 		return nil, err
@@ -251,6 +265,16 @@ func (r *userRepository) ListWithFilters(ctx context.Context, params pagination.
 		u := userEntityToService(users[i])
 		outUsers = append(outUsers, *u)
 		userMap[u.ID] = &outUsers[len(outUsers)-1]
+	}
+
+	registrationIPs, err := r.loadRegistrationIPs(ctx, userIDs)
+	if err != nil {
+		return nil, nil, err
+	}
+	for id, registrationIP := range registrationIPs {
+		if u, ok := userMap[id]; ok {
+			u.RegistrationIP = registrationIP
+		}
 	}
 
 	shouldLoadSubscriptions := filters.IncludeSubscriptions == nil || *filters.IncludeSubscriptions
@@ -426,12 +450,59 @@ func (r *userRepository) GetFirstAdmin(ctx context.Context) (*service.User, erro
 	}
 
 	out := userEntityToService(m)
+	registrationIPs, err := r.loadRegistrationIPs(ctx, []int64{m.ID})
+	if err != nil {
+		return nil, err
+	}
+	if registrationIP, ok := registrationIPs[m.ID]; ok {
+		out.RegistrationIP = registrationIP
+	}
 	groups, err := r.loadAllowedGroups(ctx, []int64{m.ID})
 	if err != nil {
 		return nil, err
 	}
 	if v, ok := groups[m.ID]; ok {
 		out.AllowedGroups = v
+	}
+	return out, nil
+}
+
+func (r *userRepository) loadRegistrationIPs(ctx context.Context, userIDs []int64) (map[int64]string, error) {
+	out := make(map[int64]string, len(userIDs))
+	if len(userIDs) == 0 || r.sql == nil {
+		return out, nil
+	}
+
+	placeholders := make([]string, len(userIDs))
+	args := make([]any, len(userIDs))
+	for i, userID := range userIDs {
+		placeholders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = userID
+	}
+
+	query := fmt.Sprintf(
+		"SELECT id, registration_ip FROM users WHERE id IN (%s)",
+		strings.Join(placeholders, ","),
+	)
+
+	rows, err := r.sql.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			userID         int64
+			registrationIP string
+		)
+		if err := rows.Scan(&userID, &registrationIP); err != nil {
+			return nil, err
+		}
+		out[userID] = registrationIP
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

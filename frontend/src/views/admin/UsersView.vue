@@ -301,6 +301,19 @@
             </div>
           </template>
 
+          <template #cell-registration_ip="{ value }">
+            <div class="max-w-[12rem]">
+              <span
+                v-if="value"
+                class="block truncate font-mono text-sm text-gray-700 dark:text-gray-300"
+                :title="value"
+              >
+                {{ value }}
+              </span>
+              <span v-else class="text-sm text-gray-400">-</span>
+            </div>
+          </template>
+
           <!-- Dynamic attribute columns -->
           <template
             v-for="def in attributeDefinitions.filter(d => d.enabled)"
@@ -737,6 +750,7 @@ const allColumns = computed<Column[]>(() => [
   { key: 'id', label: 'ID', sortable: true },
   { key: 'username', label: t('admin.users.columns.username'), sortable: true },
   { key: 'notes', label: t('admin.users.columns.notes'), sortable: false },
+  { key: 'registration_ip', label: t('admin.users.columns.registrationIp'), sortable: false },
   // Dynamic attribute columns
   ...attributeColumns.value,
   { key: 'role', label: t('admin.users.columns.role'), sortable: true },

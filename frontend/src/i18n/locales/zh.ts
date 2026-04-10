@@ -1404,6 +1404,7 @@ export default {
         email: '邮箱',
         username: '用户名',
         notes: '备注',
+        registrationIp: '注册 IP',
         role: '角色',
         groups: '分组',
         subscriptions: '订阅分组',
