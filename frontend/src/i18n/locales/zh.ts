@@ -1075,7 +1075,22 @@ export default {
 
     backup: {
       title: '数据库备份',
-      description: '全量数据库备份到 S3 兼容存储，支持定时备份与恢复',
+      description: '全量数据库备份到可配置存储，支持 S3 / WebDAV、定时备份与恢复',
+      storage: {
+        title: '备份存储配置',
+        description: '选择并配置备份文件的存储方式，当前支持 S3 兼容对象存储和 WebDAV。',
+        type: '存储类型',
+        prefix: '路径前缀',
+        secretConfigured: '已配置，留空保持不变',
+        testConnection: '测试连接',
+        testSuccess: '存储连接测试成功',
+        testFailed: '存储连接测试失败',
+        saved: '存储配置已保存',
+        types: {
+          s3: 'S3 兼容存储',
+          webdav: 'WebDAV'
+        }
+      },
       s3: {
         title: 'S3 存储配置',
         description: '配置 S3 兼容存储（支持 Cloudflare R2）',
@@ -1094,6 +1109,13 @@ export default {
         testSuccess: 'S3 连接测试成功',
         testFailed: 'S3 连接测试失败',
         saved: 'S3 配置已保存'
+      },
+      webdav: {
+        baseUrl: 'WebDAV 地址',
+        baseUrlPlaceholder: 'https://dav.example.com/remote.php/dav/files/backup',
+        baseUrlHint: '填写可直接读写备份目录的 WebDAV 根地址，系统会在该目录下按前缀写入文件。',
+        username: '用户名',
+        password: '密码 / 应用专用密码'
       },
       schedule: {
         title: '定时备份',

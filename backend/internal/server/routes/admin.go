@@ -438,7 +438,10 @@ func registerDataManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 func registerBackupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 	backup := admin.Group("/backups")
 	{
-		// S3 存储配置
+		// 存储配置（兼容旧的 /s3-config 路径）
+		backup.GET("/storage-config", h.Admin.Backup.GetStorageConfig)
+		backup.PUT("/storage-config", h.Admin.Backup.UpdateStorageConfig)
+		backup.POST("/storage-config/test", h.Admin.Backup.TestStorageConnection)
 		backup.GET("/s3-config", h.Admin.Backup.GetS3Config)
 		backup.PUT("/s3-config", h.Admin.Backup.UpdateS3Config)
 		backup.POST("/s3-config/test", h.Admin.Backup.TestS3Connection)
@@ -453,6 +456,7 @@ func registerBackupRoutes(admin *gin.RouterGroup, h *handler.Handlers) {
 		backup.GET("/:id", h.Admin.Backup.GetBackup)
 		backup.DELETE("/:id", h.Admin.Backup.DeleteBackup)
 		backup.GET("/:id/download-url", h.Admin.Backup.GetDownloadURL)
+		backup.GET("/:id/download", h.Admin.Backup.DownloadBackup)
 
 		// 恢复操作
 		backup.POST("/:id/restore", h.Admin.Backup.RestoreBackup)

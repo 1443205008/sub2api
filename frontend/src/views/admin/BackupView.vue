@@ -1,55 +1,82 @@
 <template>
     <div class="space-y-6">
-      <!-- S3 Storage Config -->
+      <!-- Storage Config -->
       <div class="card p-6">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">
-              {{ t('admin.backup.s3.title') }}
+              {{ t('admin.backup.storage.title') }}
             </h3>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ t('admin.backup.s3.descriptionPrefix') }}
-              <button type="button" class="text-primary-600 underline hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300" @click="showR2Guide = true">Cloudflare R2</button>
-              {{ t('admin.backup.s3.descriptionSuffix') }}
+              {{ t('admin.backup.storage.description') }}
+              <template v-if="isS3Storage">
+                <button type="button" class="ml-1 text-primary-600 underline hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300" @click="showR2Guide = true">Cloudflare R2</button>
+              </template>
             </p>
           </div>
         </div>
         <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.storage.type') }}</label>
+            <select v-model="storageForm.type" class="input w-full">
+              <option value="s3">{{ t('admin.backup.storage.types.s3') }}</option>
+              <option value="webdav">{{ t('admin.backup.storage.types.webdav') }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.storage.prefix') }}</label>
+            <input v-model="storageForm.prefix" class="input w-full" placeholder="backups/" />
+          </div>
+
+          <template v-if="isS3Storage">
+          <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.endpoint') }}</label>
-            <input v-model="s3Form.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
+            <input v-model="storageForm.endpoint" class="input w-full" placeholder="https://<account_id>.r2.cloudflarestorage.com" />
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.region') }}</label>
-            <input v-model="s3Form.region" class="input w-full" placeholder="auto" />
+            <input v-model="storageForm.region" class="input w-full" placeholder="auto" />
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.bucket') }}</label>
-            <input v-model="s3Form.bucket" class="input w-full" />
-          </div>
-          <div>
-            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.prefix') }}</label>
-            <input v-model="s3Form.prefix" class="input w-full" placeholder="backups/" />
+            <input v-model="storageForm.bucket" class="input w-full" />
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.accessKeyId') }}</label>
-            <input v-model="s3Form.access_key_id" class="input w-full" />
+            <input v-model="storageForm.access_key_id" class="input w-full" />
           </div>
           <div>
             <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.s3.secretAccessKey') }}</label>
-            <input v-model="s3Form.secret_access_key" type="password" class="input w-full" :placeholder="s3SecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" />
+            <input v-model="storageForm.secret_access_key" type="password" class="input w-full" :placeholder="storageSecretConfigured ? t('admin.backup.storage.secretConfigured') : ''" />
           </div>
           <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 md:col-span-2">
-            <input v-model="s3Form.force_path_style" type="checkbox" />
+            <input v-model="storageForm.force_path_style" type="checkbox" />
             <span>{{ t('admin.backup.s3.forcePathStyle') }}</span>
           </label>
+          </template>
+
+          <template v-else>
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.baseUrl') }}</label>
+            <input v-model="storageForm.base_url" class="input w-full" :placeholder="t('admin.backup.webdav.baseUrlPlaceholder')" />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ t('admin.backup.webdav.baseUrlHint') }}</p>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.username') }}</label>
+            <input v-model="storageForm.username" class="input w-full" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.password') }}</label>
+            <input v-model="storageForm.password" type="password" class="input w-full" :placeholder="storageSecretConfigured ? t('admin.backup.storage.secretConfigured') : ''" />
+          </div>
+          </template>
         </div>
         <div class="mt-4 flex flex-wrap gap-2">
-          <button type="button" class="btn btn-secondary btn-sm" :disabled="testingS3" @click="testS3">
-            {{ testingS3 ? t('common.loading') : t('admin.backup.s3.testConnection') }}
+          <button type="button" class="btn btn-secondary btn-sm" :disabled="testingStorage" @click="testStorage">
+            {{ testingStorage ? t('common.loading') : t('admin.backup.storage.testConnection') }}
           </button>
-          <button type="button" class="btn btn-primary btn-sm" :disabled="savingS3" @click="saveS3Config">
-            {{ savingS3 ? t('common.loading') : t('common.save') }}
+          <button type="button" class="btn btn-primary btn-sm" :disabled="savingStorage" @click="saveStorageConfig">
+            {{ savingStorage ? t('common.loading') : t('common.save') }}
           </button>
         </div>
       </div>
@@ -159,7 +186,7 @@
                       v-if="record.status === 'completed'"
                       type="button"
                       class="btn btn-secondary btn-xs"
-                      @click="downloadBackup(record.id)"
+                      @click="downloadBackup(record)"
                     >
                       {{ t('admin.backup.actions.download') }}
                     </button>
@@ -283,24 +310,32 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { adminAPI } from '@/api'
 import { useAppStore } from '@/stores'
-import type { BackupS3Config, BackupScheduleConfig, BackupRecord } from '@/api/admin/backup'
+import type { BackupStorageConfig, BackupScheduleConfig, BackupRecord } from '@/api/admin/backup'
 
 const { t } = useI18n()
 const appStore = useAppStore()
 
-// S3 config
-const s3Form = ref<BackupS3Config>({
+// Storage config
+const storageForm = ref<BackupStorageConfig>({
+  type: 's3',
+  prefix: 'backups/',
   endpoint: '',
   region: 'auto',
   bucket: '',
   access_key_id: '',
   secret_access_key: '',
-  prefix: 'backups/',
   force_path_style: false,
+  base_url: '',
+  username: '',
+  password: '',
 })
-const s3SecretConfigured = ref(false)
-const savingS3 = ref(false)
-const testingS3 = ref(false)
+const storageSecretConfigured = computed(() => (
+  storageForm.value.type === 'webdav'
+    ? Boolean(storageForm.value.username)
+    : Boolean(storageForm.value.access_key_id)
+))
+const savingStorage = ref(false)
+const testingStorage = ref(false)
 
 // Schedule config
 const scheduleForm = ref<BackupScheduleConfig>({
@@ -425,6 +460,7 @@ function handleVisibilityChange() {
 
 // R2 guide
 const showR2Guide = ref(false)
+const isS3Storage = computed(() => storageForm.value.type === 's3')
 const r2ConfigRows = computed(() => [
   { field: t('admin.backup.s3.endpoint'), value: 'https://<account_id>.r2.cloudflarestorage.com' },
   { field: t('admin.backup.s3.region'), value: 'auto' },
@@ -435,50 +471,53 @@ const r2ConfigRows = computed(() => [
   { field: t('admin.backup.s3.forcePathStyle'), value: t('admin.backup.r2Guide.step4.unchecked') },
 ])
 
-async function loadS3Config() {
+async function loadStorageConfig() {
   try {
-    const cfg = await adminAPI.backup.getS3Config()
-    s3Form.value = {
+    const cfg = await adminAPI.backup.getStorageConfig()
+    storageForm.value = {
+      type: cfg.type || 's3',
+      prefix: cfg.prefix || 'backups/',
       endpoint: cfg.endpoint || '',
       region: cfg.region || 'auto',
       bucket: cfg.bucket || '',
       access_key_id: cfg.access_key_id || '',
       secret_access_key: '',
-      prefix: cfg.prefix || 'backups/',
-      force_path_style: cfg.force_path_style,
+      force_path_style: Boolean(cfg.force_path_style),
+      base_url: cfg.base_url || '',
+      username: cfg.username || '',
+      password: '',
     }
-    s3SecretConfigured.value = Boolean(cfg.access_key_id)
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   }
 }
 
-async function saveS3Config() {
-  savingS3.value = true
+async function saveStorageConfig() {
+  savingStorage.value = true
   try {
-    await adminAPI.backup.updateS3Config(s3Form.value)
-    appStore.showSuccess(t('admin.backup.s3.saved'))
-    await loadS3Config()
+    await adminAPI.backup.updateStorageConfig(storageForm.value)
+    appStore.showSuccess(t('admin.backup.storage.saved'))
+    await loadStorageConfig()
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   } finally {
-    savingS3.value = false
+    savingStorage.value = false
   }
 }
 
-async function testS3() {
-  testingS3.value = true
+async function testStorage() {
+  testingStorage.value = true
   try {
-    const result = await adminAPI.backup.testS3Connection(s3Form.value)
+    const result = await adminAPI.backup.testStorageConnection(storageForm.value)
     if (result.ok) {
-      appStore.showSuccess(result.message || t('admin.backup.s3.testSuccess'))
+      appStore.showSuccess(result.message || t('admin.backup.storage.testSuccess'))
     } else {
-      appStore.showError(result.message || t('admin.backup.s3.testFailed'))
+      appStore.showError(result.message || t('admin.backup.storage.testFailed'))
     }
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   } finally {
-    testingS3.value = false
+    testingStorage.value = false
   }
 }
 
@@ -537,10 +576,17 @@ async function createBackup() {
   }
 }
 
-async function downloadBackup(id: string) {
+async function downloadBackup(record: BackupRecord) {
   try {
-    const result = await adminAPI.backup.getDownloadURL(id)
-    window.open(result.url, '_blank')
+    const blob = await adminAPI.backup.downloadBackup(record.id)
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = record.file_name || `backup-${record.id}.sql.gz`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    window.URL.revokeObjectURL(url)
   } catch (error) {
     appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
   }
@@ -605,7 +651,7 @@ function formatDate(value?: string): string {
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  await Promise.all([loadS3Config(), loadSchedule(), loadBackups()])
+  await Promise.all([loadStorageConfig(), loadSchedule(), loadBackups()])
 
   // 如果有正在 running 的备份，恢复轮询
   const runningBackup = backups.value.find(r => r.status === 'running')

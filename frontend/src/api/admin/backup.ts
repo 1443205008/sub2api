@@ -1,13 +1,23 @@
 import { apiClient } from '../client'
 
-export interface BackupS3Config {
+export type BackupStorageType = 's3' | 'webdav'
+
+export interface BackupStorageConfig {
+  type: BackupStorageType
+  prefix: string
+
+  // S3-compatible
   endpoint: string
   region: string
   bucket: string
   access_key_id: string
   secret_access_key?: string
-  prefix: string
   force_path_style: boolean
+
+  // WebDAV
+  base_url: string
+  username: string
+  password?: string
 }
 
 export interface BackupScheduleConfig {
@@ -44,19 +54,19 @@ export interface TestS3Response {
   message: string
 }
 
-// S3 Config
-export async function getS3Config(): Promise<BackupS3Config> {
-  const { data } = await apiClient.get<BackupS3Config>('/admin/backups/s3-config')
+// Storage Config
+export async function getStorageConfig(): Promise<BackupStorageConfig> {
+  const { data } = await apiClient.get<BackupStorageConfig>('/admin/backups/storage-config')
   return data
 }
 
-export async function updateS3Config(config: BackupS3Config): Promise<BackupS3Config> {
-  const { data } = await apiClient.put<BackupS3Config>('/admin/backups/s3-config', config)
+export async function updateStorageConfig(config: BackupStorageConfig): Promise<BackupStorageConfig> {
+  const { data } = await apiClient.put<BackupStorageConfig>('/admin/backups/storage-config', config)
   return data
 }
 
-export async function testS3Connection(config: BackupS3Config): Promise<TestS3Response> {
-  const { data } = await apiClient.post<TestS3Response>('/admin/backups/s3-config/test', config)
+export async function testStorageConnection(config: BackupStorageConfig): Promise<TestS3Response> {
+  const { data } = await apiClient.post<TestS3Response>('/admin/backups/storage-config/test', config)
   return data
 }
 
@@ -96,6 +106,13 @@ export async function getDownloadURL(id: string): Promise<{ url: string }> {
   return data
 }
 
+export async function downloadBackup(id: string): Promise<Blob> {
+  const { data } = await apiClient.get<Blob>(`/admin/backups/${id}/download`, {
+    responseType: 'blob',
+  })
+  return data
+}
+
 // Restore
 export async function restoreBackup(id: string, password: string): Promise<BackupRecord> {
   const { data } = await apiClient.post<BackupRecord>(`/admin/backups/${id}/restore`, { password })
@@ -103,9 +120,9 @@ export async function restoreBackup(id: string, password: string): Promise<Backu
 }
 
 export const backupAPI = {
-  getS3Config,
-  updateS3Config,
-  testS3Connection,
+  getStorageConfig,
+  updateStorageConfig,
+  testStorageConnection,
   getSchedule,
   updateSchedule,
   createBackup,
@@ -113,6 +130,7 @@ export const backupAPI = {
   getBackup,
   deleteBackup,
   getDownloadURL,
+  downloadBackup,
   restoreBackup,
 }
 

@@ -288,6 +288,34 @@ func TestBackupService_S3ConfigKeepExistingSecret(t *testing.T) {
 	require.Equal(t, "AKID-NEW", internal.AccessKeyID)
 }
 
+func TestBackupService_WebDAVConfigEncryption(t *testing.T) {
+	repo := newMockSettingRepo()
+	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())
+
+	_, err := svc.UpdateStorageConfig(context.Background(), BackupStorageConfig{
+		Type:     BackupStorageTypeWebDAV,
+		BaseURL:  "https://dav.example.com/remote.php/dav/files/admin",
+		Username: "alice",
+		Password: "dav-secret",
+		Prefix:   "backups",
+	})
+	require.NoError(t, err)
+
+	raw, _ := repo.GetValue(context.Background(), settingKeyBackupStorageConfig)
+	var stored BackupStorageConfig
+	require.NoError(t, json.Unmarshal([]byte(raw), &stored))
+	require.Equal(t, "ENC:dav-secret", stored.Password)
+
+	cfg, err := svc.GetStorageConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, BackupStorageTypeWebDAV, cfg.Type)
+	require.Empty(t, cfg.Password)
+
+	internal, err := svc.loadStorageConfig(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "dav-secret", internal.Password)
+}
+
 func TestBackupService_SaveRecordConcurrency(t *testing.T) {
 	repo := newMockSettingRepo()
 	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())

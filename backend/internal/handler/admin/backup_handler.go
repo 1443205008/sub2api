@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"net/http"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -19,10 +21,10 @@ func NewBackupHandler(backupService *service.BackupService, userService *service
 	}
 }
 
-// ─── S3 配置 ───
+// ─── 存储配置 ───
 
-func (h *BackupHandler) GetS3Config(c *gin.Context) {
-	cfg, err := h.backupService.GetS3Config(c.Request.Context())
+func (h *BackupHandler) GetStorageConfig(c *gin.Context) {
+	cfg, err := h.backupService.GetStorageConfig(c.Request.Context())
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -30,13 +32,13 @@ func (h *BackupHandler) GetS3Config(c *gin.Context) {
 	response.Success(c, cfg)
 }
 
-func (h *BackupHandler) UpdateS3Config(c *gin.Context) {
-	var req service.BackupS3Config
+func (h *BackupHandler) UpdateStorageConfig(c *gin.Context) {
+	var req service.BackupStorageConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	cfg, err := h.backupService.UpdateS3Config(c.Request.Context(), req)
+	cfg, err := h.backupService.UpdateStorageConfig(c.Request.Context(), req)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -44,19 +46,24 @@ func (h *BackupHandler) UpdateS3Config(c *gin.Context) {
 	response.Success(c, cfg)
 }
 
-func (h *BackupHandler) TestS3Connection(c *gin.Context) {
-	var req service.BackupS3Config
+func (h *BackupHandler) TestStorageConnection(c *gin.Context) {
+	var req service.BackupStorageConfig
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "Invalid request: "+err.Error())
 		return
 	}
-	err := h.backupService.TestS3Connection(c.Request.Context(), req)
+	err := h.backupService.TestStorageConnection(c.Request.Context(), req)
 	if err != nil {
 		response.Success(c, gin.H{"ok": false, "message": err.Error()})
 		return
 	}
 	response.Success(c, gin.H{"ok": true, "message": "connection successful"})
 }
+
+// 兼容旧 S3 命名接口。
+func (h *BackupHandler) GetS3Config(c *gin.Context)       { h.GetStorageConfig(c) }
+func (h *BackupHandler) UpdateS3Config(c *gin.Context)    { h.UpdateStorageConfig(c) }
+func (h *BackupHandler) TestS3Connection(c *gin.Context)  { h.TestStorageConnection(c) }
 
 // ─── 定时备份 ───
 
@@ -157,6 +164,34 @@ func (h *BackupHandler) GetDownloadURL(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"url": url})
+}
+
+func (h *BackupHandler) DownloadBackup(c *gin.Context) {
+	backupID := c.Param("id")
+	if backupID == "" {
+		response.BadRequest(c, "backup ID is required")
+		return
+	}
+
+	reader, record, err := h.backupService.DownloadBackup(c.Request.Context(), backupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	defer func() { _ = reader.Close() }()
+
+	fileName := "backup.sql.gz"
+	if record != nil && record.FileName != "" {
+		fileName = record.FileName
+	}
+	size := int64(-1)
+	if record != nil && record.SizeBytes > 0 {
+		size = record.SizeBytes
+	}
+
+	c.Header("Content-Disposition", `attachment; filename="`+fileName+`"`)
+	c.Header("Content-Type", "application/gzip")
+	c.DataFromReader(http.StatusOK, size, "application/gzip", reader, nil)
 }
 
 // ─── 恢复操作（需要重新输入管理员密码） ───

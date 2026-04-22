@@ -1053,7 +1053,22 @@ export default {
 
     backup: {
       title: 'Database Backup',
-      description: 'Full database backup to S3-compatible storage with scheduled backup and restore',
+      description: 'Full database backup to configurable storage with S3 / WebDAV, scheduled backup, and restore',
+      storage: {
+        title: 'Backup Storage Configuration',
+        description: 'Choose and configure where backup files are stored. Supports S3-compatible object storage and WebDAV.',
+        type: 'Storage Type',
+        prefix: 'Path Prefix',
+        secretConfigured: 'Already configured, leave empty to keep',
+        testConnection: 'Test Connection',
+        testSuccess: 'Storage connection test successful',
+        testFailed: 'Storage connection test failed',
+        saved: 'Storage configuration saved',
+        types: {
+          s3: 'S3-compatible Storage',
+          webdav: 'WebDAV'
+        }
+      },
       s3: {
         title: 'S3 Storage Configuration',
         description: 'Configure S3-compatible storage (supports Cloudflare R2)',
@@ -1072,6 +1087,13 @@ export default {
         testSuccess: 'S3 connection test successful',
         testFailed: 'S3 connection test failed',
         saved: 'S3 configuration saved'
+      },
+      webdav: {
+        baseUrl: 'WebDAV URL',
+        baseUrlPlaceholder: 'https://dav.example.com/remote.php/dav/files/backup',
+        baseUrlHint: 'Use the WebDAV root URL that can directly read and write the backup directory. Files will be stored under the configured prefix.',
+        username: 'Username',
+        password: 'Password / App Password'
       },
       schedule: {
         title: 'Scheduled Backup',
