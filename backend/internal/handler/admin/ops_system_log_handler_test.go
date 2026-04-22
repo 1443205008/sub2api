@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -164,6 +165,20 @@ func TestOpsSystemLogHandler_CleanupInvalidEndTime(t *testing.T) {
 	}
 }
 
+func TestOpsSystemLogHandler_CleanupInvalidTimeRange(t *testing.T) {
+	svc := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	h := NewOpsHandler(svc)
+	r := newOpsSystemLogTestRouter(h, true)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/logs/cleanup", bytes.NewBufferString(`{"time_range":"2h","request_id":"r1"}`))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", w.Code)
+	}
+}
+
 func TestOpsSystemLogHandler_CleanupServiceUnavailable(t *testing.T) {
 	svc := service.NewOpsService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	h := NewOpsHandler(svc)
@@ -229,5 +244,32 @@ func TestOpsSystemLogHandler_HealthUnavailableAndMonitoringDisabled(t *testing.T
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("status=%d, want 404", w.Code)
+	}
+}
+
+func TestParseOpsCleanupTimeRange_TimeRangeOnly(t *testing.T) {
+	start, end, err := parseOpsCleanupTimeRange("24h", "", "", "1h")
+	if err != nil {
+		t.Fatalf("parseOpsCleanupTimeRange() error: %v", err)
+	}
+	if start == nil || end == nil {
+		t.Fatalf("expected non-nil start and end")
+	}
+	if !start.Before(*end) {
+		t.Fatalf("expected start before end: start=%v end=%v", *start, *end)
+	}
+	delta := end.Sub(*start)
+	if delta < 23*time.Hour || delta > 25*time.Hour {
+		t.Fatalf("unexpected delta: %s", delta)
+	}
+}
+
+func TestParseOpsCleanupTimeRange_EmptyReturnsNil(t *testing.T) {
+	start, end, err := parseOpsCleanupTimeRange("", "", "", "1h")
+	if err != nil {
+		t.Fatalf("parseOpsCleanupTimeRange() error: %v", err)
+	}
+	if start != nil || end != nil {
+		t.Fatalf("expected nil range, got start=%v end=%v", start, end)
 	}
 }

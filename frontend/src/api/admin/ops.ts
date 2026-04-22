@@ -908,6 +908,7 @@ export interface OpsSystemLogQuery {
 }
 
 export interface OpsSystemLogCleanupRequest {
+  time_range?: '5m' | '30m' | '1h' | '6h' | '24h' | '7d' | '30d'
   start_time?: string
   end_time?: string
   level?: string

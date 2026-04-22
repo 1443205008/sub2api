@@ -159,6 +159,23 @@ const toRFC3339 = (value: string) => {
   return d.toISOString()
 }
 
+const parsePositiveInt = (value: string) => {
+  const raw = value.trim()
+  if (!raw) return { value: undefined, valid: true }
+  const parsed = Number.parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { value: undefined, valid: false }
+  }
+  return { value: parsed, valid: true }
+}
+
+const getCleanupRangeLabel = () => {
+  if (filters.start_time || filters.end_time) {
+    return `${filters.start_time || '自动补全开始'} ~ ${filters.end_time || '当前时间'}`
+  }
+  return filters.time_range
+}
+
 const buildQuery = () => {
   const query: Record<string, any> = {
     page: page.value,
@@ -274,18 +291,31 @@ const resetRuntimeConfig = async () => {
 }
 
 const cleanupCurrentFilter = async () => {
-  const ok = window.confirm('确认按当前筛选条件清理系统日志？该操作不可撤销。')
+  const userID = parsePositiveInt(filters.user_id)
+  if (!userID.valid) {
+    appStore.showError('user_id 必须是正整数')
+    return
+  }
+  const accountID = parsePositiveInt(filters.account_id)
+  if (!accountID.valid) {
+    appStore.showError('account_id 必须是正整数')
+    return
+  }
+
+  const rangeLabel = getCleanupRangeLabel()
+  const ok = window.confirm(`确认清理 ${rangeLabel} 范围内、且匹配当前筛选条件的系统日志？该操作不可撤销。`)
   if (!ok) return
   try {
     const payload = {
+      time_range: filters.start_time || filters.end_time ? undefined : filters.time_range,
       start_time: toRFC3339(filters.start_time),
       end_time: toRFC3339(filters.end_time),
       level: filters.level.trim() || undefined,
       component: filters.component.trim() || undefined,
       request_id: filters.request_id.trim() || undefined,
       client_request_id: filters.client_request_id.trim() || undefined,
-      user_id: filters.user_id.trim() ? Number.parseInt(filters.user_id.trim(), 10) : undefined,
-      account_id: filters.account_id.trim() ? Number.parseInt(filters.account_id.trim(), 10) : undefined,
+      user_id: userID.value,
+      account_id: accountID.value,
       platform: filters.platform.trim() || undefined,
       model: filters.model.trim() || undefined,
       q: filters.q.trim() || undefined
