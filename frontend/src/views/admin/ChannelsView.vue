@@ -628,6 +628,8 @@ function addPricingEntry(sectionIdx: number) {
     cache_read_price: null,
     image_output_price: null,
     per_request_price: null,
+    service_tier_standard_multiplier: null,
+    service_tier_fast_multiplier: null,
     intervals: []
   })
 }
@@ -694,6 +696,8 @@ function formToAPI(): { group_ids: number[], model_pricing: ChannelModelPricing[
         cache_read_price: mTokToPerToken(entry.cache_read_price),
         image_output_price: mTokToPerToken(entry.image_output_price),
         per_request_price: entry.per_request_price != null && entry.per_request_price !== '' ? Number(entry.per_request_price) : null,
+        service_tier_standard_multiplier: entry.service_tier_standard_multiplier != null && entry.service_tier_standard_multiplier !== '' ? Number(entry.service_tier_standard_multiplier) : null,
+        service_tier_fast_multiplier: entry.service_tier_fast_multiplier != null && entry.service_tier_fast_multiplier !== '' ? Number(entry.service_tier_fast_multiplier) : null,
         intervals: formIntervalsToAPI(entry.intervals || [])
       })
     }
@@ -740,6 +744,8 @@ function apiToForm(channel: Channel): PlatformSection[] {
         cache_read_price: perTokenToMTok(p.cache_read_price),
         image_output_price: perTokenToMTok(p.image_output_price),
         per_request_price: p.per_request_price,
+        service_tier_standard_multiplier: p.service_tier_standard_multiplier ?? null,
+        service_tier_fast_multiplier: p.service_tier_fast_multiplier ?? null,
         intervals: apiIntervalsToForm(p.intervals || [])
       } as PricingFormEntry))
 

@@ -502,10 +502,89 @@ func TestCalculateCost_LargeTokenCount(t *testing.T) {
 
 func TestServiceTierCostMultiplier(t *testing.T) {
 	require.InDelta(t, 2.0, serviceTierCostMultiplier("priority"), 1e-12)
+	require.InDelta(t, 2.0, serviceTierCostMultiplier("fast"), 1e-12)
 	require.InDelta(t, 2.0, serviceTierCostMultiplier(" Priority "), 1e-12)
 	require.InDelta(t, 0.5, serviceTierCostMultiplier("flex"), 1e-12)
 	require.InDelta(t, 1.0, serviceTierCostMultiplier(""), 1e-12)
 	require.InDelta(t, 1.0, serviceTierCostMultiplier("default"), 1e-12)
+}
+
+func TestCalculateCostUnified_ChannelStandardMultiplierApplied(t *testing.T) {
+	svc := newTestBillingService()
+	resolver := NewModelPricingResolver(&ChannelService{}, svc)
+	standardMultiplier := 1.25
+
+	cost, err := svc.CalculateCostUnified(CostInput{
+		Model:          "claude-sonnet-4",
+		Tokens:         UsageTokens{InputTokens: 100, OutputTokens: 50},
+		RateMultiplier: 1.0,
+		ServiceTier:    "",
+		Resolver:       resolver,
+		Resolved: &ResolvedPricing{
+			Mode: BillingModeToken,
+			BasePricing: &ModelPricing{
+				InputPricePerToken:  3e-6,
+				OutputPricePerToken: 15e-6,
+			},
+			ServiceTierStandardMultiplier: &standardMultiplier,
+		},
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 100*3e-6*standardMultiplier, cost.InputCost, 1e-12)
+	require.InDelta(t, 50*15e-6*standardMultiplier, cost.OutputCost, 1e-12)
+}
+
+func TestCalculateCostUnified_ChannelFastMultiplierAppliedOnPriorityPricing(t *testing.T) {
+	svc := newTestBillingService()
+	resolver := NewModelPricingResolver(&ChannelService{}, svc)
+	fastMultiplier := 1.5
+
+	cost, err := svc.CalculateCostUnified(CostInput{
+		Model:          "gpt-5.1",
+		Tokens:         UsageTokens{InputTokens: 100, OutputTokens: 20, CacheReadTokens: 10},
+		RateMultiplier: 1.0,
+		ServiceTier:    "priority",
+		Resolver:       resolver,
+		Resolved: &ResolvedPricing{
+			Mode: BillingModeToken,
+			BasePricing: &ModelPricing{
+				InputPricePerToken:             1e-6,
+				InputPricePerTokenPriority:     2e-6,
+				OutputPricePerToken:            3e-6,
+				OutputPricePerTokenPriority:    6e-6,
+				CacheReadPricePerToken:         0.2e-6,
+				CacheReadPricePerTokenPriority: 0.4e-6,
+			},
+			ServiceTierFastMultiplier: &fastMultiplier,
+		},
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 100*2e-6*fastMultiplier, cost.InputCost, 1e-12)
+	require.InDelta(t, 20*6e-6*fastMultiplier, cost.OutputCost, 1e-12)
+	require.InDelta(t, 10*0.4e-6*fastMultiplier, cost.CacheReadCost, 1e-12)
+}
+
+func TestCalculateCostUnified_PerRequestChannelFastMultiplierApplied(t *testing.T) {
+	svc := newTestBillingService()
+	resolver := NewModelPricingResolver(&ChannelService{}, svc)
+	fastMultiplier := 1.8
+
+	cost, err := svc.CalculateCostUnified(CostInput{
+		Model:          "claude-sonnet-4",
+		RequestCount:   2,
+		RateMultiplier: 1.0,
+		ServiceTier:    "fast",
+		Resolver:       resolver,
+		Resolved: &ResolvedPricing{
+			Mode:                           BillingModePerRequest,
+			DefaultPerRequestPrice:         0.2,
+			ServiceTierFastMultiplier:      &fastMultiplier,
+			ServiceTierStandardMultiplier:  nil,
+		},
+	})
+	require.NoError(t, err)
+	require.InDelta(t, 0.2*2*fastMultiplier, cost.TotalCost, 1e-12)
+	require.InDelta(t, 0.2*2*fastMultiplier, cost.ActualCost, 1e-12)
 }
 
 func TestCalculateCostWithServiceTier_OpenAIPriorityUsesPriorityPricing(t *testing.T) {

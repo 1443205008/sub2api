@@ -607,6 +607,8 @@ func checkPricesNotNegative(p ChannelModelPricing) error {
 		{"cache_read_price", p.CacheReadPrice},
 		{"image_output_price", p.ImageOutputPrice},
 		{"per_request_price", p.PerRequestPrice},
+		{"service_tier_standard_multiplier", p.ServiceTierStandardMultiplier},
+		{"service_tier_fast_multiplier", p.ServiceTierFastMultiplier},
 	}
 	for _, c := range checks {
 		if c.val != nil && *c.val < 0 {

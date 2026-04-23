@@ -94,6 +94,41 @@
           </div>
         </div>
 
+        <div class="mt-3">
+          <label class="block text-xs font-medium text-gray-500 dark:text-gray-400">
+            {{ t('admin.channels.form.serviceTierMultipliers', '服务档位倍率（可选）') }}
+          </label>
+          <div class="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <label class="text-xs text-gray-400">{{ t('admin.channels.form.serviceTierStandard', 'Standard') }}</label>
+              <input
+                :value="entry.service_tier_standard_multiplier"
+                @input="emitField('service_tier_standard_multiplier', ($event.target as HTMLInputElement).value)"
+                type="number"
+                step="any"
+                min="0"
+                class="input mt-0.5 text-sm"
+                :placeholder="t('admin.channels.form.multiplierPlaceholder', '留空表示不覆盖')"
+              />
+            </div>
+            <div>
+              <label class="text-xs text-gray-400">{{ t('admin.channels.form.serviceTierFast', 'Fast') }}</label>
+              <input
+                :value="entry.service_tier_fast_multiplier"
+                @input="emitField('service_tier_fast_multiplier', ($event.target as HTMLInputElement).value)"
+                type="number"
+                step="any"
+                min="0"
+                class="input mt-0.5 text-sm"
+                :placeholder="t('admin.channels.form.multiplierPlaceholder', '留空表示不覆盖')"
+              />
+            </div>
+          </div>
+          <p class="mt-1 text-xs text-gray-400">
+            {{ t('admin.channels.form.serviceTierMultipliersHint', '基于当前条目的基础价格再乘以对应档位倍率；留空时沿用系统默认行为。') }}
+          </p>
+        </div>
+
         <!-- Token mode -->
         <div v-if="entry.billing_mode === 'token'">
           <!-- Default prices (fallback when no interval matches) -->

@@ -31,6 +31,8 @@ export interface ChannelModelPricing {
   cache_read_price: number | null
   image_output_price: number | null
   per_request_price: number | null
+  service_tier_standard_multiplier: number | null
+  service_tier_fast_multiplier: number | null
   intervals: PricingInterval[]
 }
 

@@ -198,11 +198,13 @@ func groupIDPtr() *int64 { v := int64(100); return &v }
 
 func TestResolve_WithChannelOverride_TokenFlat(t *testing.T) {
 	r := newResolverWithChannel(t, []ChannelModelPricing{{
-		Platform:    "anthropic",
-		Models:      []string{"claude-sonnet-4"},
-		BillingMode: BillingModeToken,
-		InputPrice:  testPtrFloat64(10e-6),
-		OutputPrice: testPtrFloat64(50e-6),
+		Platform:                      "anthropic",
+		Models:                        []string{"claude-sonnet-4"},
+		BillingMode:                   BillingModeToken,
+		InputPrice:                    testPtrFloat64(10e-6),
+		OutputPrice:                   testPtrFloat64(50e-6),
+		ServiceTierStandardMultiplier: testPtrFloat64(1.2),
+		ServiceTierFastMultiplier:     testPtrFloat64(1.8),
 	}})
 
 	resolved := r.Resolve(context.Background(), PricingInput{
@@ -218,6 +220,8 @@ func TestResolve_WithChannelOverride_TokenFlat(t *testing.T) {
 	require.InDelta(t, 10e-6, resolved.BasePricing.InputPricePerTokenPriority, 1e-12)
 	require.InDelta(t, 50e-6, resolved.BasePricing.OutputPricePerToken, 1e-12)
 	require.InDelta(t, 50e-6, resolved.BasePricing.OutputPricePerTokenPriority, 1e-12)
+	require.Equal(t, testPtrFloat64(1.2), resolved.ServiceTierStandardMultiplier)
+	require.Equal(t, testPtrFloat64(1.8), resolved.ServiceTierFastMultiplier)
 }
 
 func TestResolve_WithChannelOverride_TokenPartialOverride(t *testing.T) {

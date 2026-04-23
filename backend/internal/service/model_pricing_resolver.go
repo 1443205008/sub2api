@@ -29,6 +29,10 @@ type ResolvedPricing struct {
 	// 按次/图片模式：默认价格（未命中层级时使用）
 	DefaultPerRequestPrice float64
 
+	// 渠道服务档位倍率（仅渠道定价时可能存在）
+	ServiceTierStandardMultiplier *float64
+	ServiceTierFastMultiplier     *float64
+
 	// 来源标识
 	Source string // "channel", "litellm", "fallback"
 
@@ -98,6 +102,8 @@ func (r *ModelPricingResolver) applyChannelOverrides(ctx context.Context, groupI
 	}
 
 	resolved.Source = PricingSourceChannel
+	resolved.ServiceTierStandardMultiplier = chPricing.ServiceTierStandardMultiplier
+	resolved.ServiceTierFastMultiplier = chPricing.ServiceTierFastMultiplier
 	resolved.Mode = chPricing.BillingMode
 	if resolved.Mode == "" {
 		resolved.Mode = BillingModeToken

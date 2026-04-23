@@ -66,7 +66,39 @@ const (
 )
 
 func normalizeBillingServiceTier(serviceTier string) string {
-	return strings.ToLower(strings.TrimSpace(serviceTier))
+	switch strings.ToLower(strings.TrimSpace(serviceTier)) {
+	case "fast":
+		return "priority"
+	case "default", "standard":
+		return "standard"
+	default:
+		return strings.ToLower(strings.TrimSpace(serviceTier))
+	}
+}
+
+func channelServiceTierKey(serviceTier string) string {
+	switch normalizeBillingServiceTier(serviceTier) {
+	case "", "standard":
+		return "standard"
+	case "priority":
+		return "fast"
+	default:
+		return ""
+	}
+}
+
+func channelServiceTierMultiplier(serviceTier string, standardMultiplier, fastMultiplier *float64) float64 {
+	switch channelServiceTierKey(serviceTier) {
+	case "standard":
+		if standardMultiplier != nil && *standardMultiplier >= 0 {
+			return *standardMultiplier
+		}
+	case "fast":
+		if fastMultiplier != nil && *fastMultiplier >= 0 {
+			return *fastMultiplier
+		}
+	}
+	return 1.0
 }
 
 func usePriorityServiceTierPricing(serviceTier string, pricing *ModelPricing) bool {
@@ -477,7 +509,15 @@ func (s *BillingService) calculateTokenCost(resolved *ResolvedPricing, input Cos
 	// 长上下文定价仅在无区间定价时应用（区间定价已包含上下文分层）
 	applyLongCtx := len(resolved.Intervals) == 0
 
-	return s.computeTokenBreakdown(pricing, input.Tokens, input.RateMultiplier, input.ServiceTier, applyLongCtx), nil
+	return s.computeTokenBreakdown(
+		pricing,
+		input.Tokens,
+		input.RateMultiplier,
+		input.ServiceTier,
+		applyLongCtx,
+		resolved.ServiceTierStandardMultiplier,
+		resolved.ServiceTierFastMultiplier,
+	), nil
 }
 
 // computeTokenBreakdown 是 token 计费的核心逻辑，由 calculateTokenCost 和 calculateCostInternal 共用。
@@ -486,6 +526,8 @@ func (s *BillingService) computeTokenBreakdown(
 	pricing *ModelPricing, tokens UsageTokens,
 	rateMultiplier float64, serviceTier string,
 	applyLongCtx bool,
+	standardMultiplier *float64,
+	fastMultiplier *float64,
 ) *CostBreakdown {
 	if rateMultiplier <= 0 {
 		rateMultiplier = 1.0
@@ -509,6 +551,8 @@ func (s *BillingService) computeTokenBreakdown(
 	} else {
 		tierMultiplier = serviceTierCostMultiplier(serviceTier)
 	}
+
+	tierMultiplier *= channelServiceTierMultiplier(serviceTier, standardMultiplier, fastMultiplier)
 
 	if applyLongCtx && s.shouldApplySessionLongContextPricing(tokens, pricing) {
 		inputPrice *= pricing.LongContextInputMultiplier
@@ -590,6 +634,12 @@ func (s *BillingService) calculatePerRequestCost(resolved *ResolvedPricing, inpu
 		unitPrice = resolved.DefaultPerRequestPrice
 	}
 
+	unitPrice *= channelServiceTierMultiplier(
+		input.ServiceTier,
+		resolved.ServiceTierStandardMultiplier,
+		resolved.ServiceTierFastMultiplier,
+	)
+
 	totalCost := unitPrice * float64(count)
 	actualCost := totalCost * input.RateMultiplier
 
@@ -621,7 +671,22 @@ func (s *BillingService) calculateCostInternal(model string, tokens UsageTokens,
 	}
 
 	// 旧路径始终检查长上下文定价（无区间定价概念）
-	return s.computeTokenBreakdown(pricing, tokens, rateMultiplier, serviceTier, true), nil
+	var standardMultiplier *float64
+	var fastMultiplier *float64
+	if channelPricing != nil {
+		standardMultiplier = channelPricing.ServiceTierStandardMultiplier
+		fastMultiplier = channelPricing.ServiceTierFastMultiplier
+	}
+
+	return s.computeTokenBreakdown(
+		pricing,
+		tokens,
+		rateMultiplier,
+		serviceTier,
+		true,
+		standardMultiplier,
+		fastMultiplier,
+	), nil
 }
 
 func (s *BillingService) applyModelSpecificPricingPolicy(model string, pricing *ModelPricing) *ModelPricing {

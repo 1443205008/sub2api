@@ -39,15 +39,17 @@ func TestChannelToResponse_FullChannel(t *testing.T) {
 		GroupIDs:           []int64{1, 2, 3},
 		ModelPricing: []service.ChannelModelPricing{
 			{
-				ID:              10,
-				Platform:        "openai",
-				Models:          []string{"gpt-4"},
-				BillingMode:     service.BillingModeToken,
-				InputPrice:      float64Ptr(0.01),
-				OutputPrice:     float64Ptr(0.03),
-				CacheWritePrice: float64Ptr(0.005),
-				CacheReadPrice:  float64Ptr(0.002),
-				PerRequestPrice: float64Ptr(0.5),
+				ID:                           10,
+				Platform:                     "openai",
+				Models:                       []string{"gpt-4"},
+				BillingMode:                  service.BillingModeToken,
+				InputPrice:                   float64Ptr(0.01),
+				OutputPrice:                  float64Ptr(0.03),
+				CacheWritePrice:              float64Ptr(0.005),
+				CacheReadPrice:               float64Ptr(0.002),
+				PerRequestPrice:              float64Ptr(0.5),
+				ServiceTierStandardMultiplier: float64Ptr(1.1),
+				ServiceTierFastMultiplier:     float64Ptr(1.6),
 			},
 		},
 		ModelMapping: map[string]map[string]string{
@@ -83,6 +85,8 @@ func TestChannelToResponse_FullChannel(t *testing.T) {
 	require.Equal(t, float64Ptr(0.005), p.CacheWritePrice)
 	require.Equal(t, float64Ptr(0.002), p.CacheReadPrice)
 	require.Equal(t, float64Ptr(0.5), p.PerRequestPrice)
+	require.Equal(t, float64Ptr(1.1), p.ServiceTierStandardMultiplier)
+	require.Equal(t, float64Ptr(1.6), p.ServiceTierFastMultiplier)
 	require.Empty(t, p.Intervals)
 }
 
@@ -300,15 +304,17 @@ func TestPricingRequestToService_Defaults(t *testing.T) {
 func TestPricingRequestToService_WithAllFields(t *testing.T) {
 	reqs := []channelModelPricingRequest{
 		{
-			Platform:         "openai",
-			Models:           []string{"gpt-4", "gpt-4o"},
-			BillingMode:      "per_request",
-			InputPrice:       float64Ptr(0.01),
-			OutputPrice:      float64Ptr(0.03),
-			CacheWritePrice:  float64Ptr(0.005),
-			CacheReadPrice:   float64Ptr(0.002),
-			ImageOutputPrice: float64Ptr(0.04),
-			PerRequestPrice:  float64Ptr(0.5),
+			Platform:                      "openai",
+			Models:                        []string{"gpt-4", "gpt-4o"},
+			BillingMode:                   "per_request",
+			InputPrice:                    float64Ptr(0.01),
+			OutputPrice:                   float64Ptr(0.03),
+			CacheWritePrice:               float64Ptr(0.005),
+			CacheReadPrice:                float64Ptr(0.002),
+			ImageOutputPrice:              float64Ptr(0.04),
+			PerRequestPrice:               float64Ptr(0.5),
+			ServiceTierStandardMultiplier: float64Ptr(1.2),
+			ServiceTierFastMultiplier:     float64Ptr(1.8),
 		},
 	}
 
@@ -324,6 +330,8 @@ func TestPricingRequestToService_WithAllFields(t *testing.T) {
 	require.Equal(t, float64Ptr(0.002), r.CacheReadPrice)
 	require.Equal(t, float64Ptr(0.04), r.ImageOutputPrice)
 	require.Equal(t, float64Ptr(0.5), r.PerRequestPrice)
+	require.Equal(t, float64Ptr(1.2), r.ServiceTierStandardMultiplier)
+	require.Equal(t, float64Ptr(1.8), r.ServiceTierFastMultiplier)
 }
 
 func TestPricingRequestToService_WithIntervals(t *testing.T) {
@@ -399,4 +407,6 @@ func TestPricingRequestToService_NilPriceFields(t *testing.T) {
 	require.Nil(t, r.CacheReadPrice)
 	require.Nil(t, r.ImageOutputPrice)
 	require.Nil(t, r.PerRequestPrice)
+	require.Nil(t, r.ServiceTierStandardMultiplier)
+	require.Nil(t, r.ServiceTierFastMultiplier)
 }
