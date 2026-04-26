@@ -24,6 +24,8 @@ Thumbs.db
 
 # Build artifacts
 dist/
+!dist/
+!dist/**
 build/
 
 # Node modules (will be installed in container)
