@@ -36,6 +36,7 @@ export type WeChatConnectMode = "open" | "mp" | "mobile";
 
 export interface RechargeBonusTier {
   min_amount: number;
+  /** Deprecated compatibility field; recharge bonus tiers are threshold-based. */
   max_amount: number;
   bonus_percent: number;
 }

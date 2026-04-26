@@ -76,7 +76,7 @@
                 <div class="mt-3 flex flex-wrap gap-2">
                   <span
                     v-for="tier in rechargeBonusTiers"
-                    :key="`${tier.min_amount}-${tier.max_amount}-${tier.bonus_percent}`"
+                    :key="`${tier.min_amount}-${tier.bonus_percent}`"
                     class="rounded-full border px-3 py-1 text-xs font-semibold"
                     :class="rechargeBonusTierMatches(tier, validAmount)
                       ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
@@ -534,11 +534,11 @@ const rechargeBonusTiers = computed<RechargeBonusTier[]>(() =>
   (checkout.value.recharge_bonus_tiers || [])
     .map((tier) => ({
       min_amount: roundAmount(Number(tier.min_amount) || 0),
-      max_amount: roundAmount(Number(tier.max_amount) || 0),
+      max_amount: 0,
       bonus_percent: roundAmount(Number(tier.bonus_percent) || 0),
     }))
-    .filter((tier) => tier.bonus_percent > 0 && tier.min_amount >= 0 && (tier.max_amount <= 0 || tier.max_amount >= tier.min_amount))
-    .sort((a, b) => a.min_amount - b.min_amount || a.max_amount - b.max_amount || a.bonus_percent - b.bonus_percent)
+    .filter((tier) => tier.bonus_percent > 0 && tier.min_amount >= 0)
+    .sort((a, b) => a.min_amount - b.min_amount || a.bonus_percent - b.bonus_percent)
 )
 const matchedRechargeBonusTier = computed(() => {
   const amountValue = validAmount.value
@@ -611,18 +611,10 @@ function formatPercent(value: number): string {
 function rechargeBonusTierMatches(tier: RechargeBonusTier, amountValue: number): boolean {
   return amountValue > 0
     && amountValue >= tier.min_amount
-    && (tier.max_amount <= 0 || amountValue <= tier.max_amount)
 }
 
 function rechargeBonusTierLabel(tier: RechargeBonusTier): string {
-  if (tier.max_amount > 0) {
-    return t('payment.rechargeBonusTierRange', {
-      min: formatAmount(tier.min_amount),
-      max: formatAmount(tier.max_amount),
-      percent: formatPercent(tier.bonus_percent),
-    })
-  }
-  return t('payment.rechargeBonusTierNoLimit', {
+  return t('payment.rechargeBonusTierThreshold', {
     min: formatAmount(tier.min_amount),
     percent: formatPercent(tier.bonus_percent),
   })
@@ -643,7 +635,6 @@ function buildQuickRechargeAmounts(min: number, max: number, tiers: RechargeBonu
   DEFAULT_QUICK_RECHARGE_AMOUNTS.forEach(add)
   tiers.forEach((tier) => {
     add(tier.min_amount)
-    if (tier.max_amount > 0) add(tier.max_amount)
   })
   if (minAmount > 0) add(minAmount)
 

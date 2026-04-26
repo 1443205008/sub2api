@@ -74,7 +74,8 @@ type PaymentConfig struct {
 }
 
 // RechargeBonusTier configures an extra percentage bonus for balance top-ups.
-// MaxAmount <= 0 means no upper bound.
+// MaxAmount is kept for API compatibility but is ignored; a tier matches when
+// the payment amount is greater than or equal to MinAmount.
 type RechargeBonusTier struct {
 	MinAmount    float64 `json:"min_amount"`
 	MaxAmount    float64 `json:"max_amount"`
@@ -291,13 +292,13 @@ func normalizeRechargeBonusTiers(tiers []RechargeBonusTier) []RechargeBonusTier 
 		}
 		out = append(out, RechargeBonusTier{
 			MinAmount:    roundMoney2(tier.MinAmount),
-			MaxAmount:    roundMoney2(tier.MaxAmount),
+			MaxAmount:    0,
 			BonusPercent: roundMoney2(tier.BonusPercent),
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].MinAmount == out[j].MinAmount {
-			return out[i].MaxAmount < out[j].MaxAmount
+			return out[i].BonusPercent < out[j].BonusPercent
 		}
 		return out[i].MinAmount < out[j].MinAmount
 	})
@@ -306,12 +307,6 @@ func normalizeRechargeBonusTiers(tiers []RechargeBonusTier) []RechargeBonusTier 
 
 func isValidRechargeBonusTier(tier RechargeBonusTier) bool {
 	if math.IsNaN(tier.MinAmount) || math.IsInf(tier.MinAmount, 0) || tier.MinAmount < 0 {
-		return false
-	}
-	if math.IsNaN(tier.MaxAmount) || math.IsInf(tier.MaxAmount, 0) || tier.MaxAmount < 0 {
-		return false
-	}
-	if tier.MaxAmount > 0 && tier.MaxAmount < tier.MinAmount {
 		return false
 	}
 	if math.IsNaN(tier.BonusPercent) || math.IsInf(tier.BonusPercent, 0) || tier.BonusPercent < 0 || tier.BonusPercent > 1000 {

@@ -43,9 +43,6 @@ func selectRechargeBonusTier(tiers []RechargeBonusTier, paymentAmount float64) *
 		if paymentAmount < tier.MinAmount {
 			continue
 		}
-		if tier.MaxAmount > 0 && paymentAmount > tier.MaxAmount {
-			continue
-		}
 		if selected == nil || tier.MinAmount >= selected.MinAmount {
 			selected = &tiers[i]
 		}

@@ -22,7 +22,8 @@ type CustomEndpoint struct {
 	Description string `json:"description"`
 }
 
-// PaymentRechargeBonusTier describes a balance recharge bonus tier.
+// PaymentRechargeBonusTier describes a balance recharge bonus threshold.
+// MaxAmount is retained for wire compatibility and is ignored by current logic.
 type PaymentRechargeBonusTier struct {
 	MinAmount    float64 `json:"min_amount"`
 	MaxAmount    float64 `json:"max_amount"`

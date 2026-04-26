@@ -4473,7 +4473,7 @@
                       <div
                         v-for="(tier, index) in form.payment_recharge_bonus_tiers"
                         :key="index"
-                        class="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 dark:border-dark-700 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                        class="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 dark:border-dark-700 sm:grid-cols-[1fr_1fr_auto]"
                       >
                         <div>
                           <label class="input-label text-xs">{{
@@ -4485,19 +4485,6 @@
                             min="0"
                             step="0.01"
                             class="input"
-                          />
-                        </div>
-                        <div>
-                          <label class="input-label text-xs">{{
-                            t("admin.settings.payment.tierMaxAmount")
-                          }}</label>
-                          <input
-                            v-model.number="tier.max_amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            class="input"
-                            :placeholder="t('admin.settings.payment.noLimit')"
                           />
                         </div>
                         <div>
@@ -6127,18 +6114,12 @@ function normalizePaymentRechargeBonusTiers(value: unknown): RechargeBonusTier[]
       const row = item as Partial<RechargeBonusTier>;
       return {
         min_amount: Number(row.min_amount) || 0,
-        max_amount: Number(row.max_amount) || 0,
+        max_amount: 0,
         bonus_percent: Number(row.bonus_percent) || 0,
       };
     })
-    .filter(
-      (tier) =>
-        tier.min_amount >= 0 &&
-        tier.max_amount >= 0 &&
-        tier.bonus_percent >= 0 &&
-        (tier.max_amount === 0 || tier.max_amount >= tier.min_amount),
-    )
-    .sort((a, b) => a.min_amount - b.min_amount || a.max_amount - b.max_amount);
+    .filter((tier) => tier.min_amount >= 0 && tier.bonus_percent >= 0)
+    .sort((a, b) => a.min_amount - b.min_amount || a.bonus_percent - b.bonus_percent);
 }
 
 function addPaymentRechargeBonusTier() {
