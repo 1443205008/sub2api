@@ -366,3 +366,32 @@ func TestValidateProviderNotificationMetadataRejectsEasyPaySnapshotMismatch(t *t
 	})
 	assert.ErrorContains(t, err, "easypay pid mismatch")
 }
+
+func TestAffiliateRebateBaseAmountPrefersRechargePrincipal(t *testing.T) {
+	t.Parallel()
+
+	svc := &PaymentService{}
+	order := &dbent.PaymentOrder{
+		Amount:    110,
+		PayAmount: 100,
+		FeeRate:   0,
+		ProviderSnapshot: map[string]any{
+			"recharge_base_amount": 100,
+		},
+	}
+
+	assert.Equal(t, 100.0, svc.affiliateRebateBaseAmount(context.Background(), nil, order))
+}
+
+func TestAffiliateRebateBaseAmountCanInferFromPaidAmount(t *testing.T) {
+	t.Parallel()
+
+	svc := &PaymentService{}
+	order := &dbent.PaymentOrder{
+		Amount:    110,
+		PayAmount: 103,
+		FeeRate:   3,
+	}
+
+	assert.Equal(t, 100.0, svc.affiliateRebateBaseAmount(context.Background(), nil, order))
+}

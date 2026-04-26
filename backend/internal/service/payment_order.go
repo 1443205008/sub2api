@@ -270,6 +270,9 @@ func buildPaymentOrderProviderSnapshot(sel *payment.InstanceSelection, req Creat
 			snapshot["merchant_id"] = merchantID
 		}
 	}
+	if req.OrderType == payment.OrderTypeBalance && req.Amount > 0 {
+		snapshot["recharge_base_amount"] = roundMoney2(req.Amount)
+	}
 
 	if len(snapshot) == 1 {
 		return nil

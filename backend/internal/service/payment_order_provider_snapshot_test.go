@@ -130,6 +130,23 @@ func TestBuildPaymentOrderProviderSnapshot_UsesWxpayJSAPIAppIDForOpenIDOrders(t 
 	require.Equal(t, "CNY", snapshot["currency"])
 }
 
+func TestBuildPaymentOrderProviderSnapshot_IncludesRechargeBaseAmount(t *testing.T) {
+	t.Parallel()
+
+	snapshot := buildPaymentOrderProviderSnapshot(&payment.InstanceSelection{
+		InstanceID:  "88",
+		ProviderKey: payment.TypeWxpay,
+		Config: map[string]string{
+			"appId": "wx-open-app",
+		},
+	}, CreateOrderRequest{
+		OrderType: payment.OrderTypeBalance,
+		Amount:    100,
+	})
+
+	require.Equal(t, 100.0, snapshot["recharge_base_amount"])
+}
+
 func TestBuildPaymentOrderProviderSnapshot_IncludesAlipayMerchantIdentity(t *testing.T) {
 	t.Parallel()
 
