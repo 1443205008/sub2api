@@ -22,6 +22,13 @@ type CustomEndpoint struct {
 	Description string `json:"description"`
 }
 
+// PaymentRechargeBonusTier describes a balance recharge bonus tier.
+type PaymentRechargeBonusTier struct {
+	MinAmount    float64 `json:"min_amount"`
+	MaxAmount    float64 `json:"max_amount"`
+	BonusPercent float64 `json:"bonus_percent"`
+}
+
 // SystemSettings represents the admin settings API response payload.
 type SystemSettings struct {
 	RegistrationEnabled              bool     `json:"registration_enabled"`
@@ -168,6 +175,7 @@ type SystemSettings struct {
 	PaymentEnabledTypes              []string `json:"payment_enabled_types"`
 	PaymentBalanceDisabled           bool     `json:"payment_balance_disabled"`
 	PaymentBalanceRechargeMultiplier float64  `json:"payment_balance_recharge_multiplier"`
+	PaymentRechargeBonusTiers        []PaymentRechargeBonusTier `json:"payment_recharge_bonus_tiers"`
 	PaymentRechargeFeeRate           float64  `json:"payment_recharge_fee_rate"`
 	PaymentLoadBalanceStrat          string   `json:"payment_load_balance_strategy"`
 	PaymentProductNamePrefix         string   `json:"payment_product_name_prefix"`

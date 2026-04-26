@@ -70,12 +70,15 @@
                   <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
                   <span class="text-lg font-bold text-primary-600 dark:text-primary-400">¥{{ totalAmount.toFixed(2) }}</span>
                 </div>
-                <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
+                <div v-if="creditedAmount !== validAmount" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                   <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
                 </div>
-                <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
-                  {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
+                <p v-if="effectiveRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
+                  {{ t('payment.rechargeRatePreview', { usd: effectiveRechargeMultiplier.toFixed(2) }) }}
+                </p>
+                <p v-if="matchedRechargeBonusPercent > 0" class="text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  {{ t('payment.rechargeBonusPreview', { percent: matchedRechargeBonusPercent.toFixed(2) }) }}
                 </p>
               </div>
             </div>
@@ -471,7 +474,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, recharge_bonus_tiers: [], recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
 
 const tabs = computed(() => {
@@ -488,7 +491,29 @@ const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
   return multiplier > 0 ? multiplier : 1
 })
-const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+const matchedRechargeBonusPercent = computed(() => {
+  const amountValue = validAmount.value
+  if (amountValue <= 0) return 0
+  const tiers = checkout.value.recharge_bonus_tiers || []
+  let matched = 0
+  let matchedMin = -1
+  for (const tier of tiers) {
+    const min = Number(tier.min_amount) || 0
+    const max = Number(tier.max_amount) || 0
+    const bonus = Number(tier.bonus_percent) || 0
+    if (bonus <= 0 || amountValue < min) continue
+    if (max > 0 && amountValue > max) continue
+    if (min >= matchedMin) {
+      matched = bonus
+      matchedMin = min
+    }
+  }
+  return matched
+})
+const effectiveRechargeMultiplier = computed(() =>
+  balanceRechargeMultiplier.value + matchedRechargeBonusPercent.value / 100
+)
+const creditedAmount = computed(() => Math.round((validAmount.value * effectiveRechargeMultiplier.value) * 100) / 100)
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {

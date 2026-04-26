@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -31,6 +32,7 @@ type AdminService interface {
 	UpdateUser(ctx context.Context, id int64, input *UpdateUserInput) (*User, error)
 	DeleteUser(ctx context.Context, id int64) error
 	UpdateUserBalance(ctx context.Context, userID int64, balance float64, operation string, notes string) (*User, error)
+	BulkManageUsers(ctx context.Context, input *BulkManageUsersInput) (*BulkManageUsersResult, error)
 	GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error)
 	GetUserUsageStats(ctx context.Context, userID int64, period string) (any, error)
 	GetUserRPMStatus(ctx context.Context, userID int64) (*UserRPMStatus, error)
@@ -135,6 +137,28 @@ type UpdateUserInput struct {
 	// GroupRates 用户专属分组倍率配置
 	// map[groupID]*rate，nil 表示删除该分组的专属倍率
 	GroupRates map[int64]*float64
+}
+
+type BulkManageUsersInput struct {
+	UserIDs          []int64
+	Action           string
+	Status           string
+	BalanceOperation string
+	BalanceAmount    *float64
+	Concurrency      *int
+	RPMLimit          *int
+	Notes            string
+}
+
+type BulkManageUsersResult struct {
+	Total      int                     `json:"total"`
+	SuccessIDs []int64                 `json:"success_ids"`
+	Failed     []BulkManageUserFailure `json:"failed"`
+}
+
+type BulkManageUserFailure struct {
+	UserID int64  `json:"user_id"`
+	Error  string `json:"error"`
 }
 
 type AdminBindAuthIdentityInput struct {
@@ -861,6 +885,113 @@ func (s *adminServiceImpl) UpdateUserBalance(ctx context.Context, userID int64, 
 	}
 
 	return user, nil
+}
+
+func (s *adminServiceImpl) BulkManageUsers(ctx context.Context, input *BulkManageUsersInput) (*BulkManageUsersResult, error) {
+	if input == nil {
+		return nil, infraerrors.BadRequest("INVALID_INPUT", "request body is required")
+	}
+	userIDs := normalizeBulkUserIDs(input.UserIDs)
+	if len(userIDs) == 0 {
+		return nil, infraerrors.BadRequest("INVALID_USER_IDS", "user_ids must not be empty")
+	}
+	if len(userIDs) > 1000 {
+		return nil, infraerrors.BadRequest("TOO_MANY_USERS", "cannot manage more than 1000 users at once")
+	}
+	if err := validateBulkManageUsersInput(input); err != nil {
+		return nil, err
+	}
+
+	result := &BulkManageUsersResult{
+		Total:      len(userIDs),
+		SuccessIDs: make([]int64, 0, len(userIDs)),
+		Failed:     make([]BulkManageUserFailure, 0),
+	}
+	for _, userID := range userIDs {
+		if err := s.applyBulkUserAction(ctx, userID, input); err != nil {
+			result.Failed = append(result.Failed, BulkManageUserFailure{UserID: userID, Error: err.Error()})
+			continue
+		}
+		result.SuccessIDs = append(result.SuccessIDs, userID)
+	}
+	return result, nil
+}
+
+func normalizeBulkUserIDs(ids []int64) []int64 {
+	seen := make(map[int64]struct{}, len(ids))
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func validateBulkManageUsersInput(input *BulkManageUsersInput) error {
+	switch input.Action {
+	case "set_status":
+		if input.Status != StatusActive && input.Status != StatusDisabled {
+			return infraerrors.BadRequest("INVALID_STATUS", "status must be active or disabled")
+		}
+	case "adjust_balance":
+		if input.BalanceAmount == nil {
+			return infraerrors.BadRequest("INVALID_BALANCE", "balance_amount is required")
+		}
+		if math.IsNaN(*input.BalanceAmount) || math.IsInf(*input.BalanceAmount, 0) {
+			return infraerrors.BadRequest("INVALID_BALANCE", "balance_amount must be a valid number")
+		}
+		switch input.BalanceOperation {
+		case "set":
+			if *input.BalanceAmount < 0 {
+				return infraerrors.BadRequest("INVALID_BALANCE", "balance_amount must be greater than or equal to 0")
+			}
+		case "add", "subtract":
+			if *input.BalanceAmount <= 0 {
+				return infraerrors.BadRequest("INVALID_BALANCE", "balance_amount must be greater than 0")
+			}
+		default:
+			return infraerrors.BadRequest("INVALID_OPERATION", "balance_operation must be set, add, or subtract")
+		}
+	case "set_concurrency":
+		if input.Concurrency == nil || *input.Concurrency < 1 {
+			return infraerrors.BadRequest("INVALID_CONCURRENCY", "concurrency must be greater than or equal to 1")
+		}
+	case "set_rpm_limit":
+		if input.RPMLimit == nil || *input.RPMLimit < 0 {
+			return infraerrors.BadRequest("INVALID_RPM_LIMIT", "rpm_limit must be greater than or equal to 0")
+		}
+	case "delete":
+	default:
+		return infraerrors.BadRequest("INVALID_ACTION", "unsupported bulk user action")
+	}
+	return nil
+}
+
+func (s *adminServiceImpl) applyBulkUserAction(ctx context.Context, userID int64, input *BulkManageUsersInput) error {
+	switch input.Action {
+	case "set_status":
+		_, err := s.UpdateUser(ctx, userID, &UpdateUserInput{Status: input.Status})
+		return err
+	case "adjust_balance":
+		_, err := s.UpdateUserBalance(ctx, userID, *input.BalanceAmount, input.BalanceOperation, input.Notes)
+		return err
+	case "set_concurrency":
+		_, err := s.UpdateUser(ctx, userID, &UpdateUserInput{Concurrency: input.Concurrency})
+		return err
+	case "set_rpm_limit":
+		_, err := s.UpdateUser(ctx, userID, &UpdateUserInput{RPMLimit: input.RPMLimit})
+		return err
+	case "delete":
+		return s.DeleteUser(ctx, userID)
+	default:
+		return infraerrors.BadRequest("INVALID_ACTION", "unsupported bulk user action")
+	}
 }
 
 func (s *adminServiceImpl) GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]APIKey, int64, error) {

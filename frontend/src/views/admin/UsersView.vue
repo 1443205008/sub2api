@@ -114,6 +114,31 @@
 
           <!-- Right: Actions and Settings -->
           <div class="flex flex-wrap items-center justify-end gap-2">
+            <div
+              v-if="selectedCount > 0"
+              class="flex flex-wrap items-center gap-2 rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 dark:border-primary-900/50 dark:bg-primary-900/20"
+            >
+              <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
+                {{ t('admin.users.bulk.selected', { count: selectedCount }) }}
+              </span>
+              <div class="w-40">
+                <Select v-model="bulkAction" :options="bulkActionOptions" />
+              </div>
+              <button
+                type="button"
+                class="btn btn-primary px-3"
+                @click="openBulkModal"
+              >
+                {{ t('admin.users.bulk.apply') }}
+              </button>
+              <button
+                type="button"
+                class="btn btn-secondary px-3"
+                @click="clearSelection"
+              >
+                {{ t('common.clear') }}
+              </button>
+            </div>
             <!-- Mobile: Secondary buttons (icon only) -->
             <div class="flex items-center gap-2 md:contents">
               <!-- Refresh Button -->
@@ -246,6 +271,27 @@
           :sort-storage-key="USER_SORT_STORAGE_KEY"
           @sort="handleSort"
         >
+          <template #header-select>
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="allVisibleSelected"
+              :disabled="users.length === 0"
+              @change="toggleVisible(($event.target as HTMLInputElement).checked)"
+              @click.stop
+            />
+          </template>
+
+          <template #cell-select="{ row }">
+            <input
+              type="checkbox"
+              class="h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              :checked="isSelected(row.id)"
+              @change="toggle(row.id)"
+              @click.stop
+            />
+          </template>
+
           <template #cell-email="{ value }">
             <div class="flex items-center gap-2">
               <div
@@ -606,6 +652,84 @@
       </div>
     </Teleport>
 
+    <BaseDialog
+      :show="showBulkModal"
+      :title="t('admin.users.bulk.title', { count: selectedCount })"
+      width="narrow"
+      @close="closeBulkModal"
+    >
+      <form id="bulk-user-form" class="space-y-4" @submit.prevent="confirmBulkManage">
+        <div class="rounded-lg bg-gray-50 p-3 text-sm text-gray-600 dark:bg-dark-700 dark:text-dark-300">
+          {{ t('admin.users.bulk.selected', { count: selectedCount }) }}
+        </div>
+
+        <div v-if="bulkAction === 'set_status'">
+          <label class="input-label">{{ t('admin.users.bulk.status') }}</label>
+          <Select
+            v-model="bulkForm.status"
+            :options="[
+              { value: 'active', label: t('common.active') },
+              { value: 'disabled', label: t('admin.users.disabled') }
+            ]"
+          />
+        </div>
+
+        <template v-else-if="bulkAction === 'adjust_balance'">
+          <div>
+            <label class="input-label">{{ t('admin.users.bulk.balanceOperation') }}</label>
+            <Select
+              v-model="bulkForm.balance_operation"
+              :options="[
+                { value: 'add', label: t('admin.users.bulk.balanceAdd') },
+                { value: 'subtract', label: t('admin.users.bulk.balanceSubtract') },
+                { value: 'set', label: t('admin.users.bulk.balanceSet') }
+              ]"
+            />
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.users.bulk.balanceAmount') }}</label>
+            <div class="relative">
+              <div class="absolute left-3 top-1/2 -translate-y-1/2 font-medium text-gray-500">$</div>
+              <input v-model.number="bulkForm.balance_amount" type="number" step="any" min="0" required class="input pl-8" />
+            </div>
+          </div>
+          <div>
+            <label class="input-label">{{ t('admin.users.notes') }}</label>
+            <textarea v-model="bulkForm.notes" rows="3" class="input"></textarea>
+          </div>
+        </template>
+
+        <div v-else-if="bulkAction === 'set_concurrency'">
+          <label class="input-label">{{ t('admin.users.bulk.concurrency') }}</label>
+          <input v-model.number="bulkForm.concurrency" type="number" min="1" step="1" required class="input" />
+        </div>
+
+        <div v-else-if="bulkAction === 'set_rpm_limit'">
+          <label class="input-label">{{ t('admin.users.form.rpmLimit') }}</label>
+          <input v-model.number="bulkForm.rpm_limit" type="number" min="0" step="1" required class="input" />
+          <p class="mt-1 text-xs text-gray-400">{{ t('admin.users.form.rpmLimitHint') }}</p>
+        </div>
+
+        <div v-else-if="bulkAction === 'delete'" class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-300">
+          {{ t('admin.users.bulk.deleteWarning', { count: selectedCount }) }}
+        </div>
+      </form>
+      <template #footer>
+        <div class="flex justify-end gap-3">
+          <button type="button" class="btn btn-secondary" @click="closeBulkModal">{{ t('common.cancel') }}</button>
+          <button
+            type="submit"
+            form="bulk-user-form"
+            class="btn"
+            :class="bulkAction === 'delete' ? 'btn-danger' : 'btn-primary'"
+            :disabled="bulkSubmitting || selectedCount === 0"
+          >
+            {{ bulkSubmitting ? t('common.processing') : t('common.confirm') }}
+          </button>
+        </div>
+      </template>
+    </BaseDialog>
+
     <ConfirmDialog :show="showDeleteDialog" :title="t('admin.users.deleteUser')" :message="t('admin.users.deleteConfirm', { email: deletingUser?.email })" :danger="true" @confirm="confirmDelete" @cancel="showDeleteDialog = false" />
     <UserCreateModal :show="showCreateModal" @close="showCreateModal = false" @success="loadUsers" />
     <UserEditModal :show="showEditModal" :user="editingUser" @close="closeEditModal" @success="loadUsers" />
@@ -623,6 +747,7 @@ import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
+import { useTableSelection } from '@/composables/useTableSelection'
 import { formatDateTime } from '@/utils/format'
 import Icon from '@/components/icons/Icon.vue'
 
@@ -630,11 +755,13 @@ const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
 import type { AdminUser, AdminGroup, UserAttributeDefinition } from '@/types'
 import type { BatchUserUsageStats } from '@/api/admin/dashboard'
+import type { BulkUserAction } from '@/api/admin/users'
 import type { Column } from '@/components/common/types'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import TablePageLayout from '@/components/layout/TablePageLayout.vue'
 import DataTable from '@/components/common/DataTable.vue'
 import Pagination from '@/components/common/Pagination.vue'
+import BaseDialog from '@/components/common/BaseDialog.vue'
 import ConfirmDialog from '@/components/common/ConfirmDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import GroupBadge from '@/components/common/GroupBadge.vue'
@@ -699,6 +826,7 @@ const getAttributeValue = (userId: number, attrId: number): string => {
 
 // All possible columns (for column settings)
 const allColumns = computed<Column[]>(() => [
+  { key: 'select', label: '', sortable: false, class: 'w-12' },
   { key: 'email', label: t('admin.users.columns.user'), sortable: true },
   { key: 'id', label: t('admin.users.columns.id'), sortable: true },
   { key: 'username', label: t('admin.users.columns.username'), sortable: true },
@@ -720,7 +848,7 @@ const allColumns = computed<Column[]>(() => [
 
 // Columns that can be toggled (exclude email and actions which are always visible)
 const toggleableColumns = computed(() =>
-  allColumns.value.filter(col => col.key !== 'email' && col.key !== 'actions')
+  allColumns.value.filter(col => col.key !== 'select' && col.key !== 'email' && col.key !== 'actions')
 )
 
 // Hidden columns (stored in Set - columns NOT in this set are visible)
@@ -795,11 +923,39 @@ const hasVisibleAttributeColumns = computed(() =>
 // Filtered columns based on visibility
 const columns = computed<Column[]>(() =>
   allColumns.value.filter(col =>
-    col.key === 'email' || col.key === 'actions' || !hiddenColumns.has(col.key)
+    col.key === 'select' || col.key === 'email' || col.key === 'actions' || !hiddenColumns.has(col.key)
   )
 )
 
 const users = ref<AdminUser[]>([])
+const {
+  selectedIds,
+  selectedCount,
+  allVisibleSelected,
+  isSelected,
+  toggle,
+  toggleVisible,
+  clear: clearSelection,
+  removeMany: removeSelectedUsers
+} = useTableSelection<AdminUser>({ rows: users, getId: (user) => user.id })
+const bulkAction = ref<BulkUserAction>('set_status')
+const showBulkModal = ref(false)
+const bulkSubmitting = ref(false)
+const bulkForm = reactive({
+  status: 'disabled' as 'active' | 'disabled',
+  balance_operation: 'add' as 'set' | 'add' | 'subtract',
+  balance_amount: 0,
+  concurrency: 1,
+  rpm_limit: 0,
+  notes: ''
+})
+const bulkActionOptions = computed(() => [
+  { value: 'set_status', label: t('admin.users.bulk.actions.setStatus') },
+  { value: 'adjust_balance', label: t('admin.users.bulk.actions.adjustBalance') },
+  { value: 'set_concurrency', label: t('admin.users.bulk.actions.setConcurrency') },
+  { value: 'set_rpm_limit', label: t('admin.users.bulk.actions.setRpmLimit') },
+  { value: 'delete', label: t('admin.users.bulk.actions.delete') }
+])
 const loading = ref(false)
 const searchQuery = ref('')
 const USER_SORT_STORAGE_KEY = 'admin-users-table-sort'
@@ -1285,6 +1441,83 @@ const updateAttributeFilter = (attrId: number, value: string) => {
 const applyFilter = () => {
   saveFiltersToStorage()
   loadUsers()
+}
+
+const openBulkModal = () => {
+  if (selectedCount.value === 0) {
+    appStore.showError(t('admin.users.bulk.noSelection'))
+    return
+  }
+  showBulkModal.value = true
+}
+
+const closeBulkModal = () => {
+  if (bulkSubmitting.value) return
+  showBulkModal.value = false
+}
+
+const confirmBulkManage = async () => {
+  if (selectedCount.value === 0) {
+    appStore.showError(t('admin.users.bulk.noSelection'))
+    return
+  }
+  const payload: Parameters<typeof adminAPI.users.bulkManage>[0] = {
+    user_ids: selectedIds.value,
+    action: bulkAction.value
+  }
+
+  if (bulkAction.value === 'set_status') {
+    payload.status = bulkForm.status
+  } else if (bulkAction.value === 'adjust_balance') {
+    const amount = Number(bulkForm.balance_amount)
+    if (bulkForm.balance_operation === 'set' ? amount < 0 : amount <= 0) {
+      appStore.showError(t('admin.users.amountRequired'))
+      return
+    }
+    payload.balance_operation = bulkForm.balance_operation
+    payload.balance_amount = amount
+    payload.notes = bulkForm.notes
+  } else if (bulkAction.value === 'set_concurrency') {
+    const concurrency = Number(bulkForm.concurrency)
+    if (!Number.isInteger(concurrency) || concurrency < 1) {
+      appStore.showError(t('admin.users.concurrencyMin'))
+      return
+    }
+    payload.concurrency = concurrency
+  } else if (bulkAction.value === 'set_rpm_limit') {
+    const rpmLimit = Number(bulkForm.rpm_limit)
+    if (!Number.isInteger(rpmLimit) || rpmLimit < 0) {
+      appStore.showError(t('admin.users.bulk.invalidRpmLimit'))
+      return
+    }
+    payload.rpm_limit = rpmLimit
+  }
+
+  bulkSubmitting.value = true
+  try {
+    const result = await adminAPI.users.bulkManage(payload)
+    removeSelectedUsers(result.success_ids)
+    if (result.failed.length === 0) {
+      clearSelection()
+    }
+    appStore.showSuccess(t('admin.users.bulk.success', {
+      success: result.success_ids.length,
+      failed: result.failed.length
+    }))
+    if (result.failed.length > 0) {
+      appStore.showError(t('admin.users.bulk.partialFailed', {
+        count: result.failed.length,
+        message: result.failed[0]?.error || ''
+      }))
+    }
+    showBulkModal.value = false
+    loadUsers()
+  } catch (error: any) {
+    appStore.showError(error.response?.data?.detail || t('admin.users.bulk.failed'))
+    console.error('Error bulk managing users:', error)
+  } finally {
+    bulkSubmitting.value = false
+  }
 }
 
 const handleEdit = (user: AdminUser) => {

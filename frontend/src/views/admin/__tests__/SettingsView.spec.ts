@@ -371,6 +371,7 @@ const baseSettingsResponse = {
   payment_enabled_types: [],
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_recharge_bonus_tiers: [],
   payment_recharge_fee_rate: 0,
   payment_load_balance_strategy: "round-robin",
   payment_product_name_prefix: "",

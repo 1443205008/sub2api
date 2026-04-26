@@ -175,6 +175,15 @@ func (s *stubAdminService) UpdateUserBalance(ctx context.Context, userID int64, 
 	return &user, nil
 }
 
+func (s *stubAdminService) BulkManageUsers(ctx context.Context, input *service.BulkManageUsersInput) (*service.BulkManageUsersResult, error) {
+	result := &service.BulkManageUsersResult{
+		Total:      len(input.UserIDs),
+		SuccessIDs: append([]int64{}, input.UserIDs...),
+		Failed:     []service.BulkManageUserFailure{},
+	}
+	return result, nil
+}
+
 func (s *stubAdminService) GetUserAPIKeys(ctx context.Context, userID int64, page, pageSize int, sortBy, sortOrder string) ([]service.APIKey, int64, error) {
 	return s.apiKeys, int64(len(s.apiKeys)), nil
 }

@@ -44,6 +44,30 @@ export interface AdminBoundAuthIdentity {
   channel?: AdminBoundAuthIdentityChannel | null
 }
 
+export type BulkUserAction =
+  | 'set_status'
+  | 'adjust_balance'
+  | 'set_concurrency'
+  | 'set_rpm_limit'
+  | 'delete'
+
+export interface BulkManageUsersRequest {
+  user_ids: number[]
+  action: BulkUserAction
+  status?: 'active' | 'disabled'
+  balance_operation?: 'set' | 'add' | 'subtract'
+  balance_amount?: number
+  concurrency?: number
+  rpm_limit?: number
+  notes?: string
+}
+
+export interface BulkManageUsersResult {
+  total: number
+  success_ids: number[]
+  failed: Array<{ user_id: number; error: string }>
+}
+
 /**
  * List all users with pagination
  * @param page - Page number (default: 1)
@@ -163,6 +187,11 @@ export async function updateBalance(
     operation,
     notes: notes || ''
   })
+  return data
+}
+
+export async function bulkManage(input: BulkManageUsersRequest): Promise<BulkManageUsersResult> {
+  const { data } = await apiClient.post<BulkManageUsersResult>('/admin/users/bulk-manage', input)
   return data
 }
 
@@ -304,6 +333,7 @@ export const usersAPI = {
   update,
   delete: deleteUser,
   updateBalance,
+  bulkManage,
   updateConcurrency,
   toggleStatus,
   getUserApiKeys,

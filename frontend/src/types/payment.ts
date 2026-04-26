@@ -33,10 +33,17 @@ export interface PaymentConfig {
   order_timeout_minutes: number
   balance_disabled: boolean
   balance_recharge_multiplier: number
+  recharge_bonus_tiers: RechargeBonusTier[]
   enabled_payment_types: PaymentType[]
   help_image_url: string
   help_text: string
   stripe_publishable_key: string
+}
+
+export interface RechargeBonusTier {
+  min_amount: number
+  max_amount: number
+  bonus_percent: number
 }
 
 export interface MethodLimit {
@@ -64,6 +71,7 @@ export interface CheckoutInfoResponse {
   plans: SubscriptionPlan[]
   balance_disabled: boolean
   balance_recharge_multiplier: number
+  recharge_bonus_tiers: RechargeBonusTier[]
   recharge_fee_rate: number
   help_text: string
   help_image_url: string

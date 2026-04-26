@@ -229,6 +229,7 @@ func (h *SettingHandler) GetSettings(c *gin.Context) {
 		PaymentEnabledTypes:                    paymentCfg.EnabledTypes,
 		PaymentBalanceDisabled:                 paymentCfg.BalanceDisabled,
 		PaymentBalanceRechargeMultiplier:       paymentCfg.BalanceRechargeMultiplier,
+		PaymentRechargeBonusTiers:              paymentRechargeBonusTiersFromService(paymentCfg.RechargeBonusTiers),
 		PaymentRechargeFeeRate:                 paymentCfg.RechargeFeeRate,
 		PaymentLoadBalanceStrat:                paymentCfg.LoadBalanceStrategy,
 		PaymentProductNamePrefix:               paymentCfg.ProductNamePrefix,
@@ -429,6 +430,7 @@ type UpdateSettingsRequest struct {
 	PaymentEnabledTypes              []string `json:"payment_enabled_types"`
 	PaymentBalanceDisabled           *bool    `json:"payment_balance_disabled"`
 	PaymentBalanceRechargeMultiplier *float64 `json:"payment_balance_recharge_multiplier"`
+	PaymentRechargeBonusTiers        []service.RechargeBonusTier `json:"payment_recharge_bonus_tiers"`
 	PaymentRechargeFeeRate           *float64 `json:"payment_recharge_fee_rate"`
 	PaymentLoadBalanceStrat          *string  `json:"payment_load_balance_strategy"`
 	PaymentProductNamePrefix         *string  `json:"payment_product_name_prefix"`
@@ -1363,6 +1365,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 			EnabledTypes:              req.PaymentEnabledTypes,
 			BalanceDisabled:           req.PaymentBalanceDisabled,
 			BalanceRechargeMultiplier: req.PaymentBalanceRechargeMultiplier,
+			RechargeBonusTiers:        req.PaymentRechargeBonusTiers,
 			RechargeFeeRate:           req.PaymentRechargeFeeRate,
 			LoadBalanceStrategy:       req.PaymentLoadBalanceStrat,
 			ProductNamePrefix:         req.PaymentProductNamePrefix,
@@ -1536,6 +1539,7 @@ func (h *SettingHandler) UpdateSettings(c *gin.Context) {
 		PaymentEnabledTypes:                    updatedPaymentCfg.EnabledTypes,
 		PaymentBalanceDisabled:                 updatedPaymentCfg.BalanceDisabled,
 		PaymentBalanceRechargeMultiplier:       updatedPaymentCfg.BalanceRechargeMultiplier,
+		PaymentRechargeBonusTiers:              paymentRechargeBonusTiersFromService(updatedPaymentCfg.RechargeBonusTiers),
 		PaymentRechargeFeeRate:                 updatedPaymentCfg.RechargeFeeRate,
 		PaymentLoadBalanceStrat:                updatedPaymentCfg.LoadBalanceStrategy,
 		PaymentProductNamePrefix:               updatedPaymentCfg.ProductNamePrefix,
@@ -1564,12 +1568,28 @@ func hasPaymentFields(req UpdateSettingsRequest) bool {
 		req.PaymentMaxAmount != nil || req.PaymentDailyLimit != nil ||
 		req.PaymentOrderTimeoutMin != nil || req.PaymentMaxPendingOrders != nil ||
 		req.PaymentEnabledTypes != nil || req.PaymentBalanceDisabled != nil ||
-		req.PaymentBalanceRechargeMultiplier != nil || req.PaymentRechargeFeeRate != nil ||
+		req.PaymentBalanceRechargeMultiplier != nil || req.PaymentRechargeBonusTiers != nil ||
+		req.PaymentRechargeFeeRate != nil ||
 		req.PaymentLoadBalanceStrat != nil || req.PaymentProductNamePrefix != nil ||
 		req.PaymentProductNameSuffix != nil || req.PaymentHelpImageURL != nil ||
 		req.PaymentHelpText != nil || req.PaymentCancelRateLimitEnabled != nil ||
 		req.PaymentCancelRateLimitMax != nil || req.PaymentCancelRateLimitWindow != nil ||
 		req.PaymentCancelRateLimitUnit != nil || req.PaymentCancelRateLimitMode != nil
+}
+
+func paymentRechargeBonusTiersFromService(tiers []service.RechargeBonusTier) []dto.PaymentRechargeBonusTier {
+	if len(tiers) == 0 {
+		return []dto.PaymentRechargeBonusTier{}
+	}
+	out := make([]dto.PaymentRechargeBonusTier, 0, len(tiers))
+	for _, tier := range tiers {
+		out = append(out, dto.PaymentRechargeBonusTier{
+			MinAmount:    tier.MinAmount,
+			MaxAmount:    tier.MaxAmount,
+			BonusPercent: tier.BonusPercent,
+		})
+	}
+	return out
 }
 
 func (h *SettingHandler) auditSettingsUpdate(c *gin.Context, before *service.SystemSettings, after *service.SystemSettings, beforeAuthSourceDefaults *service.AuthSourceDefaultSettings, afterAuthSourceDefaults *service.AuthSourceDefaultSettings, req UpdateSettingsRequest) {

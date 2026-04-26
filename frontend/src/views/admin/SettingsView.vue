@@ -4440,6 +4440,97 @@
                       }}
                     </p>
                   </div>
+                  <div class="md:col-span-2">
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <label class="input-label">{{
+                          t("admin.settings.payment.rechargeBonusTiers")
+                        }}</label>
+                        <p class="mt-0.5 text-xs text-gray-400">
+                          {{
+                            t(
+                              "admin.settings.payment.rechargeBonusTiersHint",
+                            )
+                          }}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        @click="addPaymentRechargeBonusTier"
+                      >
+                        <Icon name="plus" size="sm" class="mr-1" />
+                        {{ t("common.add") }}
+                      </button>
+                    </div>
+                    <div
+                      v-if="form.payment_recharge_bonus_tiers.length === 0"
+                      class="rounded-lg border border-dashed border-gray-200 px-4 py-3 text-sm text-gray-400 dark:border-dark-600"
+                    >
+                      {{ t("admin.settings.payment.rechargeBonusTiersEmpty") }}
+                    </div>
+                    <div v-else class="space-y-2">
+                      <div
+                        v-for="(tier, index) in form.payment_recharge_bonus_tiers"
+                        :key="index"
+                        class="grid grid-cols-1 gap-2 rounded-lg border border-gray-200 p-3 dark:border-dark-700 sm:grid-cols-[1fr_1fr_1fr_auto]"
+                      >
+                        <div>
+                          <label class="input-label text-xs">{{
+                            t("admin.settings.payment.tierMinAmount")
+                          }}</label>
+                          <input
+                            v-model.number="tier.min_amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="input"
+                          />
+                        </div>
+                        <div>
+                          <label class="input-label text-xs">{{
+                            t("admin.settings.payment.tierMaxAmount")
+                          }}</label>
+                          <input
+                            v-model.number="tier.max_amount"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            class="input"
+                            :placeholder="t('admin.settings.payment.noLimit')"
+                          />
+                        </div>
+                        <div>
+                          <label class="input-label text-xs">{{
+                            t("admin.settings.payment.tierBonusPercent")
+                          }}</label>
+                          <div class="relative">
+                            <input
+                              v-model.number="tier.bonus_percent"
+                              type="number"
+                              min="0"
+                              max="1000"
+                              step="0.01"
+                              class="input pr-8"
+                            />
+                            <span
+                              class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400"
+                              >%</span
+                            >
+                          </div>
+                        </div>
+                        <div class="flex items-end">
+                          <button
+                            type="button"
+                            class="btn btn-danger w-full sm:w-auto"
+                            @click="removePaymentRechargeBonusTier(index)"
+                          >
+                            {{ t("common.delete") }}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   <div>
                     <label class="input-label">{{
                       t("admin.settings.payment.rechargeFeeRate")
@@ -5203,6 +5294,7 @@ import type {
   WebSearchEmulationConfig,
   WebSearchProviderConfig,
   WebSearchTestResult,
+  RechargeBonusTier,
 } from "@/api/admin/settings";
 import type { AdminGroup, Proxy, NotifyEmailEntry } from "@/types";
 import type { ProviderInstance } from "@/types/payment";
@@ -5407,6 +5499,7 @@ const form = reactive<SettingsForm>({
   payment_order_timeout_minutes: 30,
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_recharge_bonus_tiers: [] as RechargeBonusTier[],
   payment_recharge_fee_rate: 0,
   payment_enabled_types: [],
   payment_help_image_url: "",
@@ -6027,6 +6120,39 @@ function parseTablePageSizeOptionsInput(raw: string): number[] | null {
   return deduped;
 }
 
+function normalizePaymentRechargeBonusTiers(value: unknown): RechargeBonusTier[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const row = item as Partial<RechargeBonusTier>;
+      return {
+        min_amount: Number(row.min_amount) || 0,
+        max_amount: Number(row.max_amount) || 0,
+        bonus_percent: Number(row.bonus_percent) || 0,
+      };
+    })
+    .filter(
+      (tier) =>
+        tier.min_amount >= 0 &&
+        tier.max_amount >= 0 &&
+        tier.bonus_percent >= 0 &&
+        (tier.max_amount === 0 || tier.max_amount >= tier.min_amount),
+    )
+    .sort((a, b) => a.min_amount - b.min_amount || a.max_amount - b.max_amount);
+}
+
+function addPaymentRechargeBonusTier() {
+  form.payment_recharge_bonus_tiers.push({
+    min_amount: 0,
+    max_amount: 0,
+    bonus_percent: 0,
+  });
+}
+
+function removePaymentRechargeBonusTier(index: number) {
+  form.payment_recharge_bonus_tiers.splice(index, 1);
+}
+
 async function loadSettings() {
   loading.value = true;
   loadFailed.value = false;
@@ -6040,6 +6166,9 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.payment_recharge_bonus_tiers = normalizePaymentRechargeBonusTiers(
+      settings.payment_recharge_bonus_tiers,
+    );
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(settings));
     form.backend_mode_enabled = settings.backend_mode_enabled;
     form.default_subscriptions = normalizeDefaultSubscriptionSettings(
@@ -6424,6 +6553,9 @@ async function saveSettings() {
       payment_balance_disabled: form.payment_balance_disabled,
       payment_balance_recharge_multiplier:
         Number(form.payment_balance_recharge_multiplier) || 1,
+      payment_recharge_bonus_tiers: normalizePaymentRechargeBonusTiers(
+        form.payment_recharge_bonus_tiers,
+      ),
       payment_recharge_fee_rate: Number(form.payment_recharge_fee_rate) || 0,
       payment_enabled_types: form.payment_enabled_types,
       payment_load_balance_strategy: form.payment_load_balance_strategy,
@@ -6468,6 +6600,9 @@ async function saveSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
+    form.payment_recharge_bonus_tiers = normalizePaymentRechargeBonusTiers(
+      updated.payment_recharge_bonus_tiers,
+    );
     Object.assign(authSourceDefaults, buildAuthSourceDefaultsState(updated));
     registrationEmailSuffixWhitelistTags.value =
       normalizeRegistrationEmailSuffixDomains(

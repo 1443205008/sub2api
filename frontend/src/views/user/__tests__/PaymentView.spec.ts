@@ -103,6 +103,7 @@ function checkoutInfoFixture() {
       plans: [],
       balance_disabled: false,
       balance_recharge_multiplier: 1,
+      recharge_bonus_tiers: [],
       recharge_fee_rate: 0,
       help_text: '',
       help_image_url: '',

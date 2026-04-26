@@ -68,6 +68,18 @@ type UpdateBalanceRequest struct {
 	Notes     string  `json:"notes"`
 }
 
+// BulkManageUsersRequest represents a batch user management request.
+type BulkManageUsersRequest struct {
+	UserIDs          []int64  `json:"user_ids" binding:"required"`
+	Action           string   `json:"action" binding:"required,oneof=set_status adjust_balance set_concurrency set_rpm_limit delete"`
+	Status           string   `json:"status"`
+	BalanceOperation string   `json:"balance_operation"`
+	BalanceAmount    *float64 `json:"balance_amount"`
+	Concurrency      *int     `json:"concurrency"`
+	RPMLimit          *int     `json:"rpm_limit"`
+	Notes            string   `json:"notes"`
+}
+
 type BindUserAuthIdentityRequest struct {
 	ProviderType    string                              `json:"provider_type"`
 	ProviderKey     string                              `json:"provider_key"`
@@ -338,6 +350,29 @@ func (h *UserHandler) UpdateBalance(c *gin.Context) {
 			return nil, execErr
 		}
 		return dto.UserFromServiceAdmin(user), nil
+	})
+}
+
+// BulkManage handles batch user management operations.
+// POST /api/v1/admin/users/bulk-manage
+func (h *UserHandler) BulkManage(c *gin.Context) {
+	var req BulkManageUsersRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+
+	executeAdminIdempotentJSON(c, "admin.users.bulk_manage", req, service.DefaultWriteIdempotencyTTL(), func(ctx context.Context) (any, error) {
+		return h.adminService.BulkManageUsers(ctx, &service.BulkManageUsersInput{
+			UserIDs:          req.UserIDs,
+			Action:           req.Action,
+			Status:           req.Status,
+			BalanceOperation: req.BalanceOperation,
+			BalanceAmount:    req.BalanceAmount,
+			Concurrency:      req.Concurrency,
+			RPMLimit:         req.RPMLimit,
+			Notes:            req.Notes,
+		})
 	})
 }
 

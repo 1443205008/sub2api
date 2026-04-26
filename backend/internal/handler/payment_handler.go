@@ -137,6 +137,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		Plans:                     planList,
 		BalanceDisabled:           cfg.BalanceDisabled,
 		BalanceRechargeMultiplier: cfg.BalanceRechargeMultiplier,
+		RechargeBonusTiers:        nonNilRechargeBonusTiers(cfg.RechargeBonusTiers),
 		RechargeFeeRate:           cfg.RechargeFeeRate,
 		HelpText:                  cfg.HelpText,
 		HelpImageURL:              cfg.HelpImageURL,
@@ -151,10 +152,18 @@ type checkoutInfoResponse struct {
 	Plans                     []checkoutPlan                  `json:"plans"`
 	BalanceDisabled           bool                            `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64                         `json:"balance_recharge_multiplier"`
+	RechargeBonusTiers        []service.RechargeBonusTier     `json:"recharge_bonus_tiers"`
 	RechargeFeeRate           float64                         `json:"recharge_fee_rate"`
 	HelpText                  string                          `json:"help_text"`
 	HelpImageURL              string                          `json:"help_image_url"`
 	StripePublishableKey      string                          `json:"stripe_publishable_key"`
+}
+
+func nonNilRechargeBonusTiers(tiers []service.RechargeBonusTier) []service.RechargeBonusTier {
+	if tiers == nil {
+		return []service.RechargeBonusTier{}
+	}
+	return tiers
 }
 
 type checkoutPlan struct {
