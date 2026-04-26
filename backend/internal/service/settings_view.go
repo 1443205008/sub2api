@@ -106,8 +106,11 @@ type SystemSettings struct {
 
 	DefaultConcurrency   int
 	DefaultBalance       float64
-	AffiliateEnabled     bool
-	AffiliateRebateRate  float64
+	AffiliateEnabled              bool
+	AffiliateRebateRate           float64
+	AffiliateRebateFreezeHours    int
+	AffiliateRebateDurationDays   int
+	AffiliateRebatePerInviteeCap  float64
 	DefaultUserRPMLimit  int
 	DefaultSubscriptions []DefaultSubscriptionSetting
 

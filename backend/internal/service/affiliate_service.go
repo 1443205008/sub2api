@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"math"
 	"strings"
 	"time"
@@ -65,16 +66,18 @@ type AffiliateSummary struct {
 	InviterID            *int64    `json:"inviter_id,omitempty"`
 	AffCount             int       `json:"aff_count"`
 	AffQuota             float64   `json:"aff_quota"`
+	AffFrozenQuota       float64   `json:"aff_frozen_quota"`
 	AffHistoryQuota      float64   `json:"aff_history_quota"`
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
 }
 
 type AffiliateInvitee struct {
-	UserID    int64      `json:"user_id"`
-	Email     string     `json:"email"`
-	Username  string     `json:"username"`
-	CreatedAt *time.Time `json:"created_at,omitempty"`
+	UserID      int64      `json:"user_id"`
+	Email       string     `json:"email"`
+	Username    string     `json:"username"`
+	CreatedAt   *time.Time `json:"created_at,omitempty"`
+	TotalRebate float64    `json:"total_rebate"`
 }
 
 type AffiliateDetail struct {
@@ -83,6 +86,7 @@ type AffiliateDetail struct {
 	InviterID       *int64  `json:"inviter_id,omitempty"`
 	AffCount        int     `json:"aff_count"`
 	AffQuota        float64 `json:"aff_quota"`
+	AffFrozenQuota  float64 `json:"aff_frozen_quota"`
 	AffHistoryQuota float64 `json:"aff_history_quota"`
 	// EffectiveRebateRatePercent 是当前用户作为邀请人时实际生效的返利比例：
 	// 优先用户自己的专属比例（aff_rebate_rate_percent），否则回退到全局比例。
@@ -95,7 +99,9 @@ type AffiliateRepository interface {
 	EnsureUserAffiliate(ctx context.Context, userID int64) (*AffiliateSummary, error)
 	GetAffiliateByCode(ctx context.Context, code string) (*AffiliateSummary, error)
 	BindInviter(ctx context.Context, userID, inviterID int64) (bool, error)
-	AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64) (bool, error)
+	AccrueQuota(ctx context.Context, inviterID, inviteeUserID int64, amount float64, freezeHours int) (bool, error)
+	GetAccruedRebateFromInvitee(ctx context.Context, inviterID, inviteeUserID int64) (float64, error)
+	ThawFrozenQuota(ctx context.Context, userID int64) (float64, error)
 	TransferQuotaToBalance(ctx context.Context, userID int64) (float64, float64, error)
 	ListInvitees(ctx context.Context, inviterID int64, limit int) ([]AffiliateInvitee, error)
 
@@ -160,6 +166,13 @@ func (s *AffiliateService) EnsureUserAffiliate(ctx context.Context, userID int64
 }
 
 func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64) (*AffiliateDetail, error) {
+	// Lazy thaw: move any matured frozen quota to available before reading.
+	if s != nil && s.repo != nil {
+		if _, err := s.repo.ThawFrozenQuota(ctx, userID); err != nil {
+			slog.Warn("GetAffiliateDetail: thaw frozen quota failed", "userID", userID, "error", err)
+		}
+	}
+
 	summary, err := s.EnsureUserAffiliate(ctx, userID)
 	if err != nil {
 		return nil, err
@@ -174,6 +187,7 @@ func (s *AffiliateService) GetAffiliateDetail(ctx context.Context, userID int64)
 		InviterID:                  summary.InviterID,
 		AffCount:                   summary.AffCount,
 		AffQuota:                   summary.AffQuota,
+		AffFrozenQuota:             summary.AffFrozenQuota,
 		AffHistoryQuota:            summary.AffHistoryQuota,
 		EffectiveRebateRatePercent: s.resolveRebateRatePercent(ctx, summary),
 		Invitees:                   invitees,
@@ -234,33 +248,73 @@ func (s *AffiliateService) AccrueInviteRebate(ctx context.Context, inviteeUserID
 	}
 	// 总开关关闭时，新充值不再产生返利
 	if !s.IsEnabled(ctx) {
+		slog.Debug("AccrueInviteRebate: feature disabled", "inviteeUserID", inviteeUserID)
 		return 0, nil
 	}
 
 	inviteeSummary, err := s.repo.EnsureUserAffiliate(ctx, inviteeUserID)
 	if err != nil {
+		slog.Error("AccrueInviteRebate: ensure invitee affiliate failed", "inviteeUserID", inviteeUserID, "error", err)
 		return 0, err
 	}
 	if inviteeSummary.InviterID == nil || *inviteeSummary.InviterID <= 0 {
+		slog.Debug("AccrueInviteRebate: no inviter bound", "inviteeUserID", inviteeUserID)
 		return 0, nil
 	}
 
 	// 加载邀请人 profile，优先使用专属比例（覆盖全局）
 	inviterSummary, err := s.repo.EnsureUserAffiliate(ctx, *inviteeSummary.InviterID)
 	if err != nil {
+		slog.Error("AccrueInviteRebate: ensure inviter affiliate failed", "inviterID", *inviteeSummary.InviterID, "error", err)
 		return 0, err
 	}
+	// 有效期检查：超过返利有效期后不再产生返利
+	if s.settingService != nil {
+		if durationDays := s.settingService.GetAffiliateRebateDurationDays(ctx); durationDays > 0 {
+			if time.Now().After(inviteeSummary.CreatedAt.AddDate(0, 0, durationDays)) {
+				slog.Debug("AccrueInviteRebate: expired", "inviteeUserID", inviteeUserID, "boundAt", inviteeSummary.CreatedAt, "durationDays", durationDays)
+				return 0, nil
+			}
+		}
+	}
+
 	rebateRatePercent := s.resolveRebateRatePercent(ctx, inviterSummary)
 	rebate := roundTo(baseRechargeAmount*(rebateRatePercent/100), 8)
 	if rebate <= 0 {
+		slog.Debug("AccrueInviteRebate: zero rebate", "inviteeUserID", inviteeUserID, "rate", rebateRatePercent, "base", baseRechargeAmount)
 		return 0, nil
 	}
 
-	applied, err := s.repo.AccrueQuota(ctx, *inviteeSummary.InviterID, inviteeUserID, rebate)
+	// 单人上限检查：精确截断到剩余额度
+	if s.settingService != nil {
+		if perInviteeCap := s.settingService.GetAffiliateRebatePerInviteeCap(ctx); perInviteeCap > 0 {
+			existing, err := s.repo.GetAccruedRebateFromInvitee(ctx, *inviteeSummary.InviterID, inviteeUserID)
+			if err != nil {
+				slog.Error("AccrueInviteRebate: query existing rebate failed", "error", err)
+				return 0, err
+			}
+			if existing >= perInviteeCap {
+				slog.Debug("AccrueInviteRebate: per-invitee cap reached", "inviteeUserID", inviteeUserID, "existing", existing, "cap", perInviteeCap)
+				return 0, nil
+			}
+			if remaining := perInviteeCap - existing; rebate > remaining {
+				rebate = roundTo(remaining, 8)
+			}
+		}
+	}
+
+	var freezeHours int
+	if s.settingService != nil {
+		freezeHours = s.settingService.GetAffiliateRebateFreezeHours(ctx)
+	}
+
+	applied, err := s.repo.AccrueQuota(ctx, *inviteeSummary.InviterID, inviteeUserID, rebate, freezeHours)
 	if err != nil {
+		slog.Error("AccrueInviteRebate: accrue quota failed", "inviterID", *inviteeSummary.InviterID, "rebate", rebate, "error", err)
 		return 0, err
 	}
 	if !applied {
+		slog.Warn("AccrueInviteRebate: accrue not applied", "inviterID", *inviteeSummary.InviterID, "rebate", rebate)
 		return 0, nil
 	}
 	return rebate, nil
