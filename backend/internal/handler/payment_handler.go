@@ -129,11 +129,12 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			ProductName: p.ProductName,
 		})
 	}
+	globalMin, globalMax := checkoutRechargeAmountRange(cfg, limitsResp.GlobalMin, limitsResp.GlobalMax)
 
 	response.Success(c, checkoutInfoResponse{
 		Methods:                   limitsResp.Methods,
-		GlobalMin:                 limitsResp.GlobalMin,
-		GlobalMax:                 limitsResp.GlobalMax,
+		GlobalMin:                 globalMin,
+		GlobalMax:                 globalMax,
 		Plans:                     planList,
 		BalanceDisabled:           cfg.BalanceDisabled,
 		BalanceRechargeMultiplier: cfg.BalanceRechargeMultiplier,
@@ -143,6 +144,19 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 		HelpImageURL:              cfg.HelpImageURL,
 		StripePublishableKey:      cfg.StripePublishableKey,
 	})
+}
+
+func checkoutRechargeAmountRange(cfg *service.PaymentConfig, methodMin, methodMax float64) (float64, float64) {
+	globalMin := methodMin
+	if cfg.MinAmount > globalMin {
+		globalMin = cfg.MinAmount
+	}
+
+	globalMax := methodMax
+	if cfg.MaxAmount > 0 && (globalMax <= 0 || cfg.MaxAmount < globalMax) {
+		globalMax = cfg.MaxAmount
+	}
+	return globalMin, globalMax
 }
 
 type checkoutInfoResponse struct {

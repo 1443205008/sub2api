@@ -43,10 +43,49 @@
             <div class="card p-6">
               <AmountInput
                 v-model="amount"
-                :amounts="[10, 20, 50, 100, 200, 500, 1000, 2000, 5000]"
+                :amounts="quickRechargeAmounts"
                 :min="globalMinAmount"
                 :max="globalMaxAmount"
               />
+              <div
+                v-if="rechargeBonusTiers.length > 0"
+                class="mt-5 overflow-hidden rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 via-green-50 to-cyan-50 p-4 shadow-sm dark:border-emerald-800/70 dark:from-emerald-950/40 dark:via-green-950/30 dark:to-cyan-950/30"
+              >
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <span class="rounded-full bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white shadow-sm">
+                        {{ t('payment.rechargeBonusBadge') }}
+                      </span>
+                      <p class="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+                        {{ rechargeBonusTitle }}
+                      </p>
+                    </div>
+                    <p class="mt-2 text-sm text-emerald-700 dark:text-emerald-300">
+                      {{ rechargeBonusDescription }}
+                    </p>
+                  </div>
+                  <div
+                    v-if="matchedRechargeBonusPercent > 0"
+                    class="rounded-2xl bg-white/80 px-4 py-3 text-center shadow-sm ring-1 ring-emerald-200 dark:bg-dark-900/70 dark:ring-emerald-800"
+                  >
+                    <p class="text-xs font-medium text-emerald-600 dark:text-emerald-400">{{ t('payment.rechargeBonusExtra') }}</p>
+                    <p class="text-2xl font-black text-emerald-600 dark:text-emerald-300">+{{ formatPercent(matchedRechargeBonusPercent) }}%</p>
+                  </div>
+                </div>
+                <div class="mt-3 flex flex-wrap gap-2">
+                  <span
+                    v-for="tier in rechargeBonusTiers"
+                    :key="`${tier.min_amount}-${tier.max_amount}-${tier.bonus_percent}`"
+                    class="rounded-full border px-3 py-1 text-xs font-semibold"
+                    :class="rechargeBonusTierMatches(tier, validAmount)
+                      ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm'
+                      : 'border-emerald-200 bg-white/70 text-emerald-700 dark:border-emerald-800 dark:bg-dark-900/60 dark:text-emerald-300'"
+                  >
+                    {{ rechargeBonusTierLabel(tier) }}
+                  </span>
+                </div>
+              </div>
               <p v-if="amountError" class="mt-2 text-xs text-amber-600 dark:text-amber-300">{{ amountError }}</p>
             </div>
             <div v-if="enabledMethods.length >= 1" class="card p-6">
@@ -77,8 +116,8 @@
                 <p v-if="effectiveRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
                   {{ t('payment.rechargeRatePreview', { usd: effectiveRechargeMultiplier.toFixed(2) }) }}
                 </p>
-                <p v-if="matchedRechargeBonusPercent > 0" class="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                  {{ t('payment.rechargeBonusPreview', { percent: matchedRechargeBonusPercent.toFixed(2) }) }}
+                <p v-if="matchedRechargeBonusPercent > 0" class="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  {{ t('payment.rechargeBonusPreview', { percent: formatPercent(matchedRechargeBonusPercent), bonus: formatAmount(bonusCreditedAmount), credited: formatAmount(creditedAmount) }) }}
                 </p>
               </div>
             </div>
@@ -257,7 +296,7 @@ import { useAppStore } from '@/stores'
 import { paymentAPI } from '@/api/payment'
 import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiError'
 import { isMobileDevice } from '@/utils/device'
-import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
+import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType, RechargeBonusTier } from '@/types/payment'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -491,29 +530,60 @@ const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
   return multiplier > 0 ? multiplier : 1
 })
-const matchedRechargeBonusPercent = computed(() => {
+const rechargeBonusTiers = computed<RechargeBonusTier[]>(() =>
+  (checkout.value.recharge_bonus_tiers || [])
+    .map((tier) => ({
+      min_amount: roundAmount(Number(tier.min_amount) || 0),
+      max_amount: roundAmount(Number(tier.max_amount) || 0),
+      bonus_percent: roundAmount(Number(tier.bonus_percent) || 0),
+    }))
+    .filter((tier) => tier.bonus_percent > 0 && tier.min_amount >= 0 && (tier.max_amount <= 0 || tier.max_amount >= tier.min_amount))
+    .sort((a, b) => a.min_amount - b.min_amount || a.max_amount - b.max_amount || a.bonus_percent - b.bonus_percent)
+)
+const matchedRechargeBonusTier = computed(() => {
   const amountValue = validAmount.value
-  if (amountValue <= 0) return 0
-  const tiers = checkout.value.recharge_bonus_tiers || []
-  let matched = 0
-  let matchedMin = -1
-  for (const tier of tiers) {
-    const min = Number(tier.min_amount) || 0
-    const max = Number(tier.max_amount) || 0
-    const bonus = Number(tier.bonus_percent) || 0
-    if (bonus <= 0 || amountValue < min) continue
-    if (max > 0 && amountValue > max) continue
-    if (min >= matchedMin) {
-      matched = bonus
-      matchedMin = min
+  if (amountValue <= 0) return null
+  let matched: RechargeBonusTier | null = null
+  for (const tier of rechargeBonusTiers.value) {
+    if (!rechargeBonusTierMatches(tier, amountValue)) continue
+    if (!matched || tier.min_amount > matched.min_amount || (tier.min_amount === matched.min_amount && tier.bonus_percent > matched.bonus_percent)) {
+      matched = tier
     }
   }
   return matched
 })
+const matchedRechargeBonusPercent = computed(() => matchedRechargeBonusTier.value?.bonus_percent ?? 0)
 const effectiveRechargeMultiplier = computed(() =>
   balanceRechargeMultiplier.value + matchedRechargeBonusPercent.value / 100
 )
 const creditedAmount = computed(() => Math.round((validAmount.value * effectiveRechargeMultiplier.value) * 100) / 100)
+const bonusCreditedAmount = computed(() => Math.round((validAmount.value * matchedRechargeBonusPercent.value / 100) * 100) / 100)
+const nextRechargeBonusTier = computed(() => {
+  const amountValue = validAmount.value
+  return rechargeBonusTiers.value.find((tier) => amountValue < tier.min_amount) ?? null
+})
+const rechargeBonusTitle = computed(() => {
+  if (matchedRechargeBonusPercent.value > 0) {
+    return t('payment.rechargeBonusMatchedTitle', { percent: formatPercent(matchedRechargeBonusPercent.value) })
+  }
+  return t('payment.rechargeBonusAvailableTitle')
+})
+const rechargeBonusDescription = computed(() => {
+  if (matchedRechargeBonusPercent.value > 0) {
+    return t('payment.rechargeBonusMatchedDesc', {
+      bonus: formatAmount(bonusCreditedAmount.value),
+      credited: formatAmount(creditedAmount.value),
+    })
+  }
+  const nextTier = nextRechargeBonusTier.value
+  if (nextTier) {
+    return t('payment.rechargeBonusNextTier', {
+      amount: formatAmount(nextTier.min_amount),
+      percent: formatPercent(nextTier.bonus_percent),
+    })
+  }
+  return t('payment.rechargeBonusNoMatch')
+})
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {
@@ -521,6 +591,78 @@ const planGridClass = computed(() => {
   if (n <= 2) return 'grid grid-cols-1 gap-5 sm:grid-cols-2'
   return 'grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3'
 })
+
+const DEFAULT_QUICK_RECHARGE_AMOUNTS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000]
+
+function roundAmount(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round(value * 100) / 100
+}
+
+function formatAmount(value: number): string {
+  const rounded = roundAmount(value)
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')
+}
+
+function formatPercent(value: number): string {
+  return formatAmount(value)
+}
+
+function rechargeBonusTierMatches(tier: RechargeBonusTier, amountValue: number): boolean {
+  return amountValue > 0
+    && amountValue >= tier.min_amount
+    && (tier.max_amount <= 0 || amountValue <= tier.max_amount)
+}
+
+function rechargeBonusTierLabel(tier: RechargeBonusTier): string {
+  if (tier.max_amount > 0) {
+    return t('payment.rechargeBonusTierRange', {
+      min: formatAmount(tier.min_amount),
+      max: formatAmount(tier.max_amount),
+      percent: formatPercent(tier.bonus_percent),
+    })
+  }
+  return t('payment.rechargeBonusTierNoLimit', {
+    min: formatAmount(tier.min_amount),
+    percent: formatPercent(tier.bonus_percent),
+  })
+}
+
+function buildQuickRechargeAmounts(min: number, max: number, tiers: RechargeBonusTier[]): number[] {
+  const minAmount = Math.max(0, roundAmount(min))
+  const maxAmount = Math.max(0, roundAmount(max))
+  const candidates = new Set<number>()
+  const add = (value: number) => {
+    const amountValue = roundAmount(value)
+    if (amountValue <= 0) return
+    if (minAmount > 0 && amountValue < minAmount) return
+    if (maxAmount > 0 && amountValue > maxAmount) return
+    candidates.add(amountValue)
+  }
+
+  DEFAULT_QUICK_RECHARGE_AMOUNTS.forEach(add)
+  tiers.forEach((tier) => {
+    add(tier.min_amount)
+    if (tier.max_amount > 0) add(tier.max_amount)
+  })
+  if (minAmount > 0) add(minAmount)
+
+  if (maxAmount > 0) {
+    add(maxAmount)
+    const start = maxAmount < 10 ? 1 : 10
+    for (let magnitude = start; magnitude <= maxAmount; magnitude *= 10) {
+      add(magnitude)
+      add(magnitude * 2)
+      add(magnitude * 5)
+    }
+  } else if (minAmount > DEFAULT_QUICK_RECHARGE_AMOUNTS[DEFAULT_QUICK_RECHARGE_AMOUNTS.length - 1]) {
+    add(minAmount)
+    add(minAmount * 2)
+    add(minAmount * 5)
+  }
+
+  return [...candidates].sort((a, b) => a - b)
+}
 
 // Check if an amount fits a method's [min, max]. 0 = no limit.
 function amountFitsMethod(amt: number, methodType: string): boolean {
@@ -532,19 +674,25 @@ function amountFitsMethod(amt: number, methodType: string): boolean {
   return true
 }
 
+function amountFitsGlobalRange(amt: number): boolean {
+  if (amt <= 0) return true
+  if (globalMinAmount.value > 0 && amt < globalMinAmount.value) return false
+  if (globalMaxAmount.value > 0 && amt > globalMaxAmount.value) return false
+  return true
+}
+
 // Visible methods decide the amount range shown to users.
 const globalMinAmount = computed(() => {
-  const limits = Object.values(visibleMethods.value)
-  if (limits.length === 0) return 0
-  if (limits.some(limit => limit.single_min <= 0)) return 0
-  return Math.min(...limits.map(limit => limit.single_min))
+  const value = Number(checkout.value.global_min) || 0
+  return value > 0 ? value : 0
 })
 const globalMaxAmount = computed(() => {
-  const limits = Object.values(visibleMethods.value)
-  if (limits.length === 0) return 0
-  if (limits.some(limit => limit.single_max <= 0)) return 0
-  return Math.max(...limits.map(limit => limit.single_max))
+  const value = Number(checkout.value.global_max) || 0
+  return value > 0 ? value : 0
 })
+const quickRechargeAmounts = computed(() =>
+  buildQuickRechargeAmounts(globalMinAmount.value, globalMaxAmount.value, rechargeBonusTiers.value)
+)
 
 // Selected method's limits (for validation and error messages)
 const selectedLimit = computed(() => visibleMethods.value[selectedMethod.value])
@@ -555,7 +703,7 @@ const methodOptions = computed<PaymentMethodOption[]>(() =>
     return {
       type,
       fee_rate: ml?.fee_rate ?? 0,
-      available: ml?.available !== false && amountFitsMethod(validAmount.value, type),
+      available: ml?.available !== false && amountFitsGlobalRange(validAmount.value) && amountFitsMethod(validAmount.value, type),
     }
   })
 )
@@ -574,6 +722,8 @@ const totalAmount = computed(() =>
 
 const amountError = computed(() => {
   if (validAmount.value <= 0) return ''
+  if (globalMinAmount.value > 0 && validAmount.value < globalMinAmount.value) return t('payment.amountTooLow', { min: globalMinAmount.value })
+  if (globalMaxAmount.value > 0 && validAmount.value > globalMaxAmount.value) return t('payment.amountTooHigh', { max: globalMaxAmount.value })
   // No method can handle this amount
   if (!enabledMethods.value.some((m) => amountFitsMethod(validAmount.value, m))) {
     return t('payment.amountNoMethod')
@@ -589,6 +739,7 @@ const amountError = computed(() => {
 
 const canSubmit = computed(() =>
   validAmount.value > 0
+    && amountFitsGlobalRange(validAmount.value)
     && amountFitsMethod(validAmount.value, selectedMethod.value)
     && selectedLimit.value?.available !== false
 )
