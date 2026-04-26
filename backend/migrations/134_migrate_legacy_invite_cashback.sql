@@ -60,10 +60,10 @@ SET value = EXCLUDED.value,
 -- legacy cashback records. Use deterministic generated codes first, then
 -- restore old reusable invite source codes for inviters where possible.
 WITH legacy_source_codes AS (
-    SELECT DISTINCT ON (inviter_id)
-           inviter_id AS user_id,
-           UPPER(code) AS legacy_code,
-           created_at
+    SELECT DISTINCT ON (src.inviter_id)
+           src.inviter_id AS user_id,
+           UPPER(src.code) AS legacy_code,
+           src.created_at
     FROM (
         SELECT rc.id,
                rc.code,
@@ -75,7 +75,7 @@ WITH legacy_source_codes AS (
     ) src
     JOIN users u ON u.id = src.inviter_id
     WHERE UPPER(src.code) ~ '^[A-Z0-9_-]{1,32}$'
-    ORDER BY inviter_id, created_at DESC NULLS LAST, id DESC
+    ORDER BY src.inviter_id, src.created_at DESC NULLS LAST, src.id DESC
 ),
 legacy_invitation_bindings AS (
     SELECT rc.id AS source_id,
@@ -141,10 +141,10 @@ ON CONFLICT DO NOTHING;
 -- If a code is already occupied by another affiliate row, keep the generated
 -- code instead to avoid violating the unique constraint.
 WITH legacy_source_codes AS (
-    SELECT DISTINCT ON (inviter_id)
-           inviter_id AS user_id,
-           UPPER(code) AS legacy_code,
-           created_at
+    SELECT DISTINCT ON (src.inviter_id)
+           src.inviter_id AS user_id,
+           UPPER(src.code) AS legacy_code,
+           src.created_at
     FROM (
         SELECT rc.id,
                rc.code,
@@ -156,7 +156,7 @@ WITH legacy_source_codes AS (
     ) src
     JOIN users u ON u.id = src.inviter_id
     WHERE UPPER(src.code) ~ '^[A-Z0-9_-]{1,32}$'
-    ORDER BY inviter_id, created_at DESC NULLS LAST, id DESC
+    ORDER BY src.inviter_id, src.created_at DESC NULLS LAST, src.id DESC
 )
 UPDATE user_affiliates ua
 SET aff_code = lc.legacy_code,
