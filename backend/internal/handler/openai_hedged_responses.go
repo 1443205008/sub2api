@@ -436,9 +436,6 @@ func openAIHedgedAccountEligible(account *service.Account) bool {
 	if account.IsOpenAIPassthroughEnabled() {
 		return false
 	}
-	if account.IsPoolMode() {
-		return false
-	}
 	return openai_compat.ShouldUseResponsesAPI(account.Extra)
 }
 
