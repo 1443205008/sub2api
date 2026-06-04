@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,8 @@ const (
 )
 
 const openAIClientTransportContextKey = "openai_client_transport"
+
+type openAICancelableHTTPUpstreamContextKey struct{}
 
 // SetOpenAIClientTransport 标记当前请求的客户端入站协议。
 func SetOpenAIClientTransport(c *gin.Context, transport OpenAIClientTransport) {
@@ -68,4 +71,31 @@ func resolveOpenAIWSDecisionByClientTransport(
 		return openAIWSHTTPDecision("client_protocol_http")
 	}
 	return decision
+}
+
+// WithCancelableOpenAIHTTPUpstream marks a request whose HTTP upstream should
+// stay tied to the caller's context. Normal streaming requests intentionally
+// detach from the downstream client so billing can drain usage after a client
+// disconnects; hedged loser requests need the opposite behavior so they can be
+// canceled as soon as another upstream wins.
+func WithCancelableOpenAIHTTPUpstream(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, openAICancelableHTTPUpstreamContextKey{}, true)
+}
+
+func useCancelableOpenAIHTTPUpstream(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	enabled, _ := ctx.Value(openAICancelableHTTPUpstreamContextKey{}).(bool)
+	return enabled
+}
+
+func openAIHTTPUpstreamContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if useCancelableOpenAIHTTPUpstream(ctx) {
+		return ctx, func() {}
+	}
+	return detachUpstreamContext(ctx)
 }

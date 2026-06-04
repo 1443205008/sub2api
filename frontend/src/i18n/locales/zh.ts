@@ -2146,6 +2146,8 @@ export default {
         rpmLimit: '每分钟请求数 (RPM)',
         rpmLimitPlaceholder: '0 表示不限制',
         rpmLimitHint: '每用户在本分组每分钟最大请求数，0 = 不限制；一旦设置即接管该用户的限流（覆盖用户级 rpm_limit）',
+        hedgedRequests: '首 token 竞速',
+        hedgedRequestsHint: '开启后，OpenAI /responses 流式请求会并发请求本分组下符合条件的 API Key 账号，取最快首个可见 token，其它请求会取消。',
         exclusiveLabel: '专属分组',
         exclusiveHint: '专属分组，可以手动指定给用户',
         platformLabel: '平台限制',

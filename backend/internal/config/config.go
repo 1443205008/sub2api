@@ -723,6 +723,8 @@ type GatewayConfig struct {
 	OpenAIHTTP2 GatewayOpenAIHTTP2Config `mapstructure:"openai_http2"`
 	// ImageConcurrency: 图片生成独立并发限制配置（默认关闭）
 	ImageConcurrency ImageConcurrencyConfig `mapstructure:"image_concurrency"`
+	// HedgedRequests: 分组级多上游账号竞速的全局安全阀配置
+	HedgedRequests GatewayHedgedRequestsConfig `mapstructure:"hedged_requests"`
 
 	// HTTP 上游连接池配置（性能优化：支持高并发场景调优）
 	// MaxIdleConns: 所有主机的最大空闲连接总数
@@ -812,6 +814,15 @@ type GatewayOpenAIHTTP2Config struct {
 	FallbackWindowSeconds int `mapstructure:"fallback_window_seconds"`
 	// FallbackTTLSeconds: 触发后回退 HTTP/1.1 的持续时间（秒）
 	FallbackTTLSeconds int `mapstructure:"fallback_ttl_seconds"`
+}
+
+// GatewayHedgedRequestsConfig controls safety limits for group-level parallel
+// upstream racing. The feature is enabled per OpenAI group in the admin page.
+type GatewayHedgedRequestsConfig struct {
+	// Enabled is kept only for backwards-compatible config parsing; use the
+	// per-group hedged_requests_enabled switch instead.
+	Enabled     bool `mapstructure:"enabled"`
+	MaxParallel int  `mapstructure:"max_parallel"`
 }
 
 // UserMessageQueueConfig 用户消息串行队列配置
@@ -1855,6 +1866,8 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_http2.fallback_error_threshold", 2)
 	viper.SetDefault("gateway.openai_http2.fallback_window_seconds", 60)
 	viper.SetDefault("gateway.openai_http2.fallback_ttl_seconds", 600)
+	viper.SetDefault("gateway.hedged_requests.enabled", false)
+	viper.SetDefault("gateway.hedged_requests.max_parallel", 0)
 	viper.SetDefault("gateway.image_concurrency.enabled", false)
 	viper.SetDefault("gateway.image_concurrency.max_concurrent_requests", 0)
 	viper.SetDefault("gateway.image_concurrency.overflow_mode", ImageConcurrencyOverflowModeReject)
@@ -2450,6 +2463,12 @@ func (c *Config) Validate() error {
 	}
 	if c.Gateway.ImageConcurrency.MaxWaitingRequests < 0 {
 		return fmt.Errorf("gateway.image_concurrency.max_waiting_requests must be non-negative")
+	}
+	if c.Gateway.HedgedRequests.MaxParallel < 0 {
+		return fmt.Errorf("gateway.hedged_requests.max_parallel must be non-negative")
+	}
+	if c.Gateway.HedgedRequests.MaxParallel == 1 {
+		return fmt.Errorf("gateway.hedged_requests.max_parallel must be 0 or at least 2")
 	}
 	if c.Gateway.MaxIdleConns <= 0 {
 		return fmt.Errorf("gateway.max_idle_conns must be positive")

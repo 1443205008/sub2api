@@ -2088,7 +2088,9 @@ export default {
         exclusive: 'Exclusive Group',
         rpmLimit: 'Requests Per Minute (RPM)',
         rpmLimitPlaceholder: '0 = unlimited',
-        rpmLimitHint: 'Max requests per minute for each user in this group; 0 = unlimited. Once set, it takes over per-user rate limiting in this group (overrides the user-level rpm_limit fallback).'
+        rpmLimitHint: 'Max requests per minute for each user in this group; 0 = unlimited. Once set, it takes over per-user rate limiting in this group (overrides the user-level rpm_limit fallback).',
+        hedgedRequests: 'First-token racing',
+        hedgedRequestsHint: 'When enabled, OpenAI /responses streaming requests race eligible API-key accounts in this group; the first visible token wins and the others are cancelled.'
       },
       enterGroupName: 'Enter group name',
       optionalDescription: 'Optional description',

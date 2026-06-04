@@ -78,20 +78,27 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 	builder = builder.SetSupportedModelScopes(groupIn.SupportedModelScopes)
 
 	created, err := builder.Save(ctx)
-	if err == nil {
-		groupIn.ID = created.ID
-		groupIn.CreatedAt = created.CreatedAt
-		groupIn.UpdatedAt = created.UpdatedAt
-		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
-			logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group create failed: group=%d err=%v", groupIn.ID, err)
-		}
+	if err != nil {
+		return translatePersistenceError(err, nil, service.ErrGroupExists)
 	}
-	return translatePersistenceError(err, nil, service.ErrGroupExists)
+	groupIn.ID = created.ID
+	groupIn.CreatedAt = created.CreatedAt
+	groupIn.UpdatedAt = created.UpdatedAt
+	if err := r.saveGroupHedgedRequestsEnabled(ctx, groupIn); err != nil {
+		return err
+	}
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
+		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group create failed: group=%d err=%v", groupIn.ID, err)
+	}
+	return nil
 }
 
 func (r *groupRepository) GetByID(ctx context.Context, id int64) (*service.Group, error) {
 	out, err := r.GetByIDLite(ctx, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := r.applyGroupHedgedRequestsEnabledPtr(ctx, out); err != nil {
 		return nil, err
 	}
 	counts, err := r.loadAccountCounts(ctx, []int64{out.ID})
@@ -205,6 +212,9 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		return translatePersistenceError(err, service.ErrGroupNotFound, service.ErrGroupExists)
 	}
 	groupIn.UpdatedAt = updated.UpdatedAt
+	if err := r.saveGroupHedgedRequestsEnabled(ctx, groupIn); err != nil {
+		return err
+	}
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
 		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group update failed: group=%d err=%v", groupIn.ID, err)
 	}
@@ -272,6 +282,9 @@ func (r *groupRepository) ListWithFilters(ctx context.Context, params pagination
 		g := groupEntityToService(groups[i])
 		outGroups = append(outGroups, *g)
 		groupIDs = append(groupIDs, g.ID)
+	}
+	if err := r.applyGroupHedgedRequestsEnabled(ctx, outGroups); err != nil {
+		return nil, nil, err
 	}
 
 	counts, err := r.loadAccountCounts(ctx, groupIDs)
@@ -370,6 +383,9 @@ func (r *groupRepository) listWithAccountCountSort(ctx context.Context, q *dbent
 			outGroups[idx] = *g
 		}
 	}
+	if err := r.applyGroupHedgedRequestsEnabled(ctx, outGroups); err != nil {
+		return nil, nil, err
+	}
 
 	return outGroups, paginationResultFromTotal(int64(total), params), nil
 }
@@ -444,6 +460,9 @@ func (r *groupRepository) ListActive(ctx context.Context) ([]service.Group, erro
 		outGroups = append(outGroups, *g)
 		groupIDs = append(groupIDs, g.ID)
 	}
+	if err := r.applyGroupHedgedRequestsEnabled(ctx, outGroups); err != nil {
+		return nil, err
+	}
 
 	counts, err := r.loadAccountCounts(ctx, groupIDs)
 	if err == nil {
@@ -473,6 +492,9 @@ func (r *groupRepository) ListActiveByPlatform(ctx context.Context, platform str
 		g := groupEntityToService(groups[i])
 		outGroups = append(outGroups, *g)
 		groupIDs = append(groupIDs, g.ID)
+	}
+	if err := r.applyGroupHedgedRequestsEnabled(ctx, outGroups); err != nil {
+		return nil, err
 	}
 
 	counts, err := r.loadAccountCounts(ctx, groupIDs)
@@ -670,6 +692,80 @@ type groupAccountCounts struct {
 	Total       int64
 	Active      int64
 	RateLimited int64
+}
+
+func (r *groupRepository) saveGroupHedgedRequestsEnabled(ctx context.Context, g *service.Group) error {
+	if g == nil || g.ID <= 0 || r.sql == nil {
+		return nil
+	}
+	_, err := r.sql.ExecContext(
+		ctx,
+		`UPDATE groups SET hedged_requests_enabled = $1 WHERE id = $2 AND deleted_at IS NULL`,
+		g.HedgedRequestsEnabled,
+		g.ID,
+	)
+	return err
+}
+
+func (r *groupRepository) applyGroupHedgedRequestsEnabledPtr(ctx context.Context, g *service.Group) error {
+	if g == nil {
+		return nil
+	}
+	values, err := r.loadGroupHedgedRequestsEnabled(ctx, []int64{g.ID})
+	if err != nil {
+		return err
+	}
+	g.HedgedRequestsEnabled = values[g.ID]
+	return nil
+}
+
+func (r *groupRepository) applyGroupHedgedRequestsEnabled(ctx context.Context, groups []service.Group) error {
+	if len(groups) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(groups))
+	for i := range groups {
+		if groups[i].ID > 0 {
+			ids = append(ids, groups[i].ID)
+		}
+	}
+	values, err := r.loadGroupHedgedRequestsEnabled(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for i := range groups {
+		groups[i].HedgedRequestsEnabled = values[groups[i].ID]
+	}
+	return nil
+}
+
+func (r *groupRepository) loadGroupHedgedRequestsEnabled(ctx context.Context, groupIDs []int64) (map[int64]bool, error) {
+	values := make(map[int64]bool, len(groupIDs))
+	if len(groupIDs) == 0 || r.sql == nil {
+		return values, nil
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		SELECT id, hedged_requests_enabled
+		FROM groups
+		WHERE id = ANY($1) AND deleted_at IS NULL
+	`, pq.Array(groupIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id int64
+		var enabled bool
+		if err := rows.Scan(&id, &enabled); err != nil {
+			return nil, err
+		}
+		values[id] = enabled
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return values, nil
 }
 
 const (

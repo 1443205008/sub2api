@@ -17,6 +17,7 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/lib/pq"
 )
 
 type apiKeyRepository struct {
@@ -81,7 +82,11 @@ func (r *apiKeyRepository) GetByID(ctx context.Context, id int64) (*service.APIK
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	out := apiKeyEntityToService(m)
+	if err := r.applyAPIKeyGroupHedgedRequestsEnabled(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // GetKeyAndOwnerID 根据 API Key ID 获取其 key 与所有者（用户）ID。
@@ -115,7 +120,11 @@ func (r *apiKeyRepository) GetByKey(ctx context.Context, key string) (*service.A
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	out := apiKeyEntityToService(m)
+	if err := r.applyAPIKeyGroupHedgedRequestsEnabled(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*service.APIKey, error) {
@@ -194,7 +203,11 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 		}
 		return nil, err
 	}
-	return apiKeyEntityToService(m), nil
+	out := apiKeyEntityToService(m)
+	if err := r.applyAPIKeyGroupHedgedRequestsEnabled(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *apiKeyRepository) Update(ctx context.Context, key *service.APIKey) error {
@@ -346,6 +359,9 @@ func (r *apiKeyRepository) ListByUserID(ctx context.Context, userID int64, param
 	outKeys := make([]service.APIKey, 0, len(keys))
 	for i := range keys {
 		outKeys = append(outKeys, *apiKeyEntityToService(keys[i]))
+	}
+	if err := r.applyAPIKeyGroupsHedgedRequestsEnabled(ctx, outKeys); err != nil {
+		return nil, nil, err
 	}
 
 	return outKeys, paginationResultFromTotal(int64(total), params), nil
@@ -650,6 +666,77 @@ func apiKeyEntityToService(m *dbent.APIKey) *service.APIKey {
 		out.Group = groupEntityToService(m.Edges.Group)
 	}
 	return out
+}
+
+func (r *apiKeyRepository) applyAPIKeyGroupHedgedRequestsEnabled(ctx context.Context, key *service.APIKey) error {
+	if key == nil || key.Group == nil || key.Group.ID <= 0 {
+		return nil
+	}
+	values, err := r.loadAPIKeyGroupHedgedRequestsEnabled(ctx, []int64{key.Group.ID})
+	if err != nil {
+		return err
+	}
+	key.Group.HedgedRequestsEnabled = values[key.Group.ID]
+	return nil
+}
+
+func (r *apiKeyRepository) applyAPIKeyGroupsHedgedRequestsEnabled(ctx context.Context, keys []service.APIKey) error {
+	if len(keys) == 0 {
+		return nil
+	}
+	groupIDs := make([]int64, 0, len(keys))
+	seen := make(map[int64]struct{}, len(keys))
+	for i := range keys {
+		if keys[i].Group == nil || keys[i].Group.ID <= 0 {
+			continue
+		}
+		id := keys[i].Group.ID
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		groupIDs = append(groupIDs, id)
+	}
+	values, err := r.loadAPIKeyGroupHedgedRequestsEnabled(ctx, groupIDs)
+	if err != nil {
+		return err
+	}
+	for i := range keys {
+		if keys[i].Group == nil {
+			continue
+		}
+		keys[i].Group.HedgedRequestsEnabled = values[keys[i].Group.ID]
+	}
+	return nil
+}
+
+func (r *apiKeyRepository) loadAPIKeyGroupHedgedRequestsEnabled(ctx context.Context, groupIDs []int64) (map[int64]bool, error) {
+	values := make(map[int64]bool, len(groupIDs))
+	if len(groupIDs) == 0 || r.sql == nil {
+		return values, nil
+	}
+	rows, err := r.sql.QueryContext(ctx, `
+		SELECT id, hedged_requests_enabled
+		FROM groups
+		WHERE id = ANY($1) AND deleted_at IS NULL
+	`, pq.Array(groupIDs))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var id int64
+		var enabled bool
+		if err := rows.Scan(&id, &enabled); err != nil {
+			return nil, err
+		}
+		values[id] = enabled
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return values, nil
 }
 
 func userEntityToService(u *dbent.User) *service.User {

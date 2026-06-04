@@ -328,6 +328,17 @@ gateway:
     fallback_error_threshold: 2
     fallback_window_seconds: 60
     fallback_ttl_seconds: 600
+  # Hedged requests safety limits. Enable the feature per OpenAI group in the
+  # admin Groups page; this config only caps fanout.
+  # 多上游竞速安全阀。功能开关在后台 OpenAI 分组页面开启；这里仅限制扇出数量。
+  hedged_requests:
+    # Legacy field kept for old configs; no longer enables the feature.
+    # 兼容旧配置保留；不再用于开启功能。
+    enabled: false
+    # Maximum parallel upstream accounts for one hedged request.
+    # 0 = no cap, race all eligible accounts in the group; otherwise use >=2.
+    # 单次竞速最多并发的上游账号数；0 = 不限制，竞速本分组下所有符合条件账号；否则必须 >=2。
+    max_parallel: 0
   # HTTP upstream connection pool settings (HTTP/2 + multi-proxy scenario defaults)
   # HTTP 上游连接池配置（HTTP/2 + 多代理场景默认值）
   # Max idle connections across all hosts

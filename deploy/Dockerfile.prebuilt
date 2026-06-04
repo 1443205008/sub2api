@@ -1,0 +1,57 @@
+# =============================================================================
+# Sub2API Runtime Image for Prebuilt Binaries
+# =============================================================================
+# Used by CI after frontend and Go binaries have already been built on the
+# runner. This Dockerfile only packages prebuilt artifacts; it does not run
+# pnpm install, go mod download, or go build.
+# =============================================================================
+
+ARG ALPINE_IMAGE=alpine:3.21
+ARG POSTGRES_IMAGE=postgres:18-alpine
+
+FROM ${POSTGRES_IMAGE} AS pg-client
+
+FROM ${ALPINE_IMAGE}
+
+ARG TARGETARCH
+
+LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
+LABEL description="Sub2API - AI API Gateway Platform"
+LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    su-exec \
+    libpq \
+    zstd-libs \
+    lz4-libs \
+    krb5-libs \
+    libldap \
+    libedit \
+    && rm -rf /var/cache/apk/*
+
+COPY --from=pg-client /usr/local/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=pg-client /usr/local/bin/psql /usr/local/bin/psql
+COPY --from=pg-client /usr/local/lib/libpq.so.5* /usr/local/lib/
+
+RUN addgroup -g 1000 sub2api && \
+    adduser -u 1000 -G sub2api -s /bin/sh -D sub2api
+
+WORKDIR /app
+
+COPY dist/docker/linux-${TARGETARCH}/sub2api /app/sub2api
+COPY deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
+
+RUN chmod +x /app/sub2api /app/docker-entrypoint.sh && \
+    mkdir -p /app/data && \
+    chown -R sub2api:sub2api /app
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:${SERVER_PORT:-8080}/health || exit 1
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["/app/sub2api"]

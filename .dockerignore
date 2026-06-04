@@ -26,6 +26,12 @@ Thumbs.db
 dist/
 build/
 
+# CI Docker image workflow builds binaries on the runner and then copies them
+# into a runtime-only Docker image.
+!dist/
+!dist/docker/
+!dist/docker/**
+
 # Node modules (will be installed in container)
 frontend/node_modules/
 node_modules/

@@ -510,6 +510,43 @@
           <p class="input-hint">{{ t("admin.groups.form.rpmLimitHint") }}</p>
         </div>
         <div
+          v-if="createForm.platform === 'openai'"
+          class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/40 dark:bg-amber-900/10"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="text-sm font-medium text-gray-800 dark:text-gray-100">
+                {{ t("admin.groups.form.hedgedRequests") }}
+              </label>
+              <p class="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+                {{ t("admin.groups.form.hedgedRequestsHint") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="
+                createForm.hedged_requests_enabled =
+                  !createForm.hedged_requests_enabled
+              "
+              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+              :class="
+                createForm.hedged_requests_enabled
+                  ? 'bg-amber-500'
+                  : 'bg-gray-300 dark:bg-dark-600'
+              "
+            >
+              <span
+                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                :class="
+                  createForm.hedged_requests_enabled
+                    ? 'translate-x-6'
+                    : 'translate-x-1'
+                "
+              />
+            </button>
+          </div>
+        </div>
+        <div
           v-if="createForm.subscription_type !== 'subscription'"
           data-tour="group-form-exclusive"
         >
@@ -1794,6 +1831,43 @@
             :placeholder="t('admin.groups.form.rpmLimitPlaceholder')"
           />
           <p class="input-hint">{{ t("admin.groups.form.rpmLimitHint") }}</p>
+        </div>
+        <div
+          v-if="editForm.platform === 'openai'"
+          class="rounded-xl border border-amber-200 bg-amber-50/60 p-4 dark:border-amber-900/40 dark:bg-amber-900/10"
+        >
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <label class="text-sm font-medium text-gray-800 dark:text-gray-100">
+                {{ t("admin.groups.form.hedgedRequests") }}
+              </label>
+              <p class="mt-1 text-xs leading-relaxed text-gray-600 dark:text-gray-400">
+                {{ t("admin.groups.form.hedgedRequestsHint") }}
+              </p>
+            </div>
+            <button
+              type="button"
+              @click="
+                editForm.hedged_requests_enabled =
+                  !editForm.hedged_requests_enabled
+              "
+              class="relative inline-flex h-6 w-12 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none"
+              :class="
+                editForm.hedged_requests_enabled
+                  ? 'bg-amber-500'
+                  : 'bg-gray-300 dark:bg-dark-600'
+              "
+            >
+              <span
+                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
+                :class="
+                  editForm.hedged_requests_enabled
+                    ? 'translate-x-6'
+                    : 'translate-x-1'
+                "
+              />
+            </button>
+          </div>
         </div>
         <div v-if="editForm.subscription_type !== 'subscription'">
           <div class="mb-1.5 flex items-center gap-1">
@@ -3346,6 +3420,7 @@ const createForm = reactive({
   fallback_group_id_on_invalid_request: null as number | null,
   // OpenAI Messages 调度配置（仅 openai 平台使用）
   allow_messages_dispatch: false,
+  hedged_requests_enabled: false,
   opus_mapped_model: createMessagesDispatchDefaults.opus_mapped_model,
   sonnet_mapped_model: createMessagesDispatchDefaults.sonnet_mapped_model,
   haiku_mapped_model: createMessagesDispatchDefaults.haiku_mapped_model,
@@ -3677,6 +3752,7 @@ const editForm = reactive({
   fallback_group_id_on_invalid_request: null as number | null,
   // OpenAI Messages 调度配置（仅 openai 平台使用）
   allow_messages_dispatch: false,
+  hedged_requests_enabled: false,
   default_mapped_model: '',
   opus_mapped_model: editMessagesDispatchDefaults.opus_mapped_model,
   sonnet_mapped_model: editMessagesDispatchDefaults.sonnet_mapped_model,
@@ -3926,6 +4002,7 @@ const closeCreateModal = () => {
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
   resetMessagesDispatchFormState(createForm);
+  createForm.hedged_requests_enabled = false;
   createForm.require_oauth_only = false;
   createForm.require_privacy_set = false;
   createForm.supported_model_scopes = ["claude", "gemini_text", "gemini_image"];
@@ -4058,6 +4135,7 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.allow_messages_dispatch =
     group.allow_messages_dispatch ||
     messagesDispatchFormState.allow_messages_dispatch;
+  editForm.hedged_requests_enabled = group.hedged_requests_enabled ?? false;
   editForm.opus_mapped_model = messagesDispatchFormState.opus_mapped_model;
   editForm.sonnet_mapped_model = messagesDispatchFormState.sonnet_mapped_model;
   editForm.haiku_mapped_model = messagesDispatchFormState.haiku_mapped_model;
@@ -4239,6 +4317,7 @@ watch(
     }
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(createForm);
+      createForm.hedged_requests_enabled = false;
     }
     if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       createForm.require_oauth_only = false;
@@ -4257,6 +4336,7 @@ watch(
     }
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(editForm);
+      editForm.hedged_requests_enabled = false;
     }
     if (!["openai", "antigravity", "anthropic", "gemini"].includes(newVal)) {
       editForm.require_oauth_only = false;
@@ -4277,6 +4357,7 @@ watch(
     }
     if (newVal !== 'openai') {
       editForm.allow_messages_dispatch = false
+      editForm.hedged_requests_enabled = false
       editForm.default_mapped_model = ''
     }
   }
