@@ -293,8 +293,8 @@ func (h *OpenAIGatewayHandler) logOpenAIHedgedSkipped(in openAIHedgedResponsesIn
 		maxParallel = h.cfg.Gateway.HedgedRequests.MaxParallel
 	}
 	groupID := int64(0)
-	if in.APIKey != nil {
-		groupID = in.APIKey.GroupID
+	if in.APIKey != nil && in.APIKey.GroupID != nil {
+		groupID = *in.APIKey.GroupID
 	}
 	fields := []zap.Field{
 		zap.String("reason", reason),
