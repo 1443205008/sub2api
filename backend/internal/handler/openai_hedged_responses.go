@@ -203,7 +203,7 @@ func (h *OpenAIGatewayHandler) tryForwardResponsesHedged(c *gin.Context, in open
 	h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
 	h.recordOpenAIResponsesUsage(c, result, in.APIKey, in.Subscription, account, in.Subject.UserID, in.RequestModel, in.Body, in.ChannelMapping, "handler.openai_gateway.responses")
 	if in.RequestLog != nil {
-		in.RequestLog.Debug("openai.hedged.request_completed",
+		in.RequestLog.Info("openai.hedged.request_completed",
 			zap.Int64("account_id", account.ID),
 			zap.Int("candidate_count", len(candidates)),
 		)
