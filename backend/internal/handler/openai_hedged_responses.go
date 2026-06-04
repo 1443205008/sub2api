@@ -55,7 +55,12 @@ type openAIHedgedCandidateRun struct {
 }
 
 func (h *OpenAIGatewayHandler) tryForwardResponsesHedged(c *gin.Context, in openAIHedgedResponsesInput) bool {
-	if h == nil || h.gatewayService == nil || !h.hedgedResponsesEnabled(c, in) {
+	if h == nil || h.gatewayService == nil {
+		return false
+	}
+	enabled, skipReason := h.hedgedResponsesEnabled(c, in)
+	if !enabled {
+		h.logOpenAIHedgedSkipped(in, skipReason, 0, nil)
 		return false
 	}
 
@@ -66,7 +71,15 @@ func (h *OpenAIGatewayHandler) tryForwardResponsesHedged(c *gin.Context, in open
 				candidate.Release()
 			}
 		}
+		h.logOpenAIHedgedSkipped(in, "insufficient_candidates", len(candidates), candidates)
 		return false
+	}
+	if in.RequestLog != nil {
+		in.RequestLog.Info("openai.hedged.request_started",
+			zap.Int("candidate_count", len(candidates)),
+			zap.Int64s("account_ids", openAIHedgedCandidateAccountIDs(candidates)),
+			zap.Int("max_parallel", h.cfg.Gateway.HedgedRequests.MaxParallel),
+		)
 	}
 
 	service.SetOpsLatencyMs(c, service.OpsRoutingLatencyMsKey, time.Since(in.RoutingStart).Milliseconds())
@@ -143,6 +156,9 @@ func (h *OpenAIGatewayHandler) tryForwardResponsesHedged(c *gin.Context, in open
 	}
 
 	if winnerResult.Candidate == nil || winnerResult.Candidate.Account == nil {
+		if in.RequestLog != nil {
+			in.RequestLog.Warn("openai.hedged.no_winner", zap.Int("candidate_count", len(candidates)))
+		}
 		return false
 	}
 	for _, candidate := range candidates {
@@ -197,49 +213,117 @@ func (h *OpenAIGatewayHandler) tryForwardResponsesHedged(c *gin.Context, in open
 
 	if result == nil {
 		h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, nil)
+		if in.RequestLog != nil {
+			in.RequestLog.Info("openai.hedged.request_completed",
+				zap.Int64("account_id", account.ID),
+				zap.Int("candidate_count", len(candidates)),
+				zap.Bool("result_nil", true),
+			)
+		}
 		return true
 	}
 
 	h.gatewayService.ReportOpenAIAccountScheduleResult(account.ID, true, result.FirstTokenMs)
 	h.recordOpenAIResponsesUsage(c, result, in.APIKey, in.Subscription, account, in.Subject.UserID, in.RequestModel, in.Body, in.ChannelMapping, "handler.openai_gateway.responses")
 	if in.RequestLog != nil {
-		in.RequestLog.Info("openai.hedged.request_completed",
+		fields := []zap.Field{
 			zap.Int64("account_id", account.ID),
 			zap.Int("candidate_count", len(candidates)),
-		)
+		}
+		if result.FirstTokenMs != nil {
+			fields = append(fields, zap.Int("first_token_ms", *result.FirstTokenMs))
+		}
+		in.RequestLog.Info("openai.hedged.request_completed", fields...)
 	}
 	return true
 }
 
-func (h *OpenAIGatewayHandler) hedgedResponsesEnabled(c *gin.Context, in openAIHedgedResponsesInput) bool {
-	if h == nil || h.cfg == nil || !validOpenAIHedgedMaxParallel(h.cfg.Gateway.HedgedRequests.MaxParallel) {
-		return false
+func (h *OpenAIGatewayHandler) hedgedResponsesEnabled(c *gin.Context, in openAIHedgedResponsesInput) (bool, string) {
+	if h == nil {
+		return false, "handler_nil"
+	}
+	if h.cfg == nil {
+		return false, "config_missing"
+	}
+	if !validOpenAIHedgedMaxParallel(h.cfg.Gateway.HedgedRequests.MaxParallel) {
+		return false, "invalid_max_parallel"
 	}
 	if c == nil || c.Request == nil || c.Writer == nil {
-		return false
+		return false, "gin_context_missing"
 	}
-	if in.APIKey == nil || in.APIKey.Group == nil {
-		return false
+	if in.APIKey == nil {
+		return false, "api_key_missing"
 	}
-	if in.APIKey.Group.Platform != service.PlatformOpenAI || !in.APIKey.Group.HedgedRequestsEnabled {
-		return false
+	if in.APIKey.Group == nil {
+		return false, "group_missing"
+	}
+	if in.APIKey.Group.Platform != service.PlatformOpenAI {
+		return false, "group_not_openai"
+	}
+	if !in.APIKey.Group.HedgedRequestsEnabled {
+		return false, "group_switch_disabled"
 	}
 	if !gjson.GetBytes(in.Body, "stream").Bool() {
-		return false
+		return false, "not_stream"
 	}
-	if in.RequireCompact || strings.TrimSpace(in.SessionHash) != "" {
-		return false
+	if in.RequireCompact {
+		return false, "remote_compact"
+	}
+	if strings.TrimSpace(in.SessionHash) != "" {
+		return false, "sticky_session"
 	}
 	if strings.TrimSpace(gjson.GetBytes(in.Body, "previous_response_id").String()) != "" {
-		return false
+		return false, "previous_response_id"
 	}
 	if service.IsImageGenerationIntent("/v1/responses", in.RequestModel, in.Body) {
-		return false
+		return false, "image_generation"
 	}
 	if openAIHedgedBodyLooksStateful(in.Body) {
-		return false
+		return false, "stateful_body"
 	}
-	return true
+	return true, ""
+}
+
+func (h *OpenAIGatewayHandler) logOpenAIHedgedSkipped(in openAIHedgedResponsesInput, reason string, candidateCount int, candidates []*openAIHedgedCandidate) {
+	if in.RequestLog == nil || !shouldLogOpenAIHedgedSkip(in) {
+		return
+	}
+	maxParallel := 0
+	if h != nil && h.cfg != nil {
+		maxParallel = h.cfg.Gateway.HedgedRequests.MaxParallel
+	}
+	groupID := int64(0)
+	if in.APIKey != nil {
+		groupID = in.APIKey.GroupID
+	}
+	fields := []zap.Field{
+		zap.String("reason", reason),
+		zap.Int64("group_id", groupID),
+		zap.Int("candidate_count", candidateCount),
+		zap.Int("max_parallel", maxParallel),
+	}
+	if ids := openAIHedgedCandidateAccountIDs(candidates); len(ids) > 0 {
+		fields = append(fields, zap.Int64s("account_ids", ids))
+	}
+	in.RequestLog.Info("openai.hedged.skipped", fields...)
+}
+
+func shouldLogOpenAIHedgedSkip(in openAIHedgedResponsesInput) bool {
+	return in.APIKey != nil &&
+		in.APIKey.Group != nil &&
+		in.APIKey.Group.Platform == service.PlatformOpenAI &&
+		in.APIKey.Group.HedgedRequestsEnabled
+}
+
+func openAIHedgedCandidateAccountIDs(candidates []*openAIHedgedCandidate) []int64 {
+	ids := make([]int64, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate == nil || candidate.Account == nil {
+			continue
+		}
+		ids = append(ids, candidate.Account.ID)
+	}
+	return ids
 }
 
 func validOpenAIHedgedMaxParallel(maxParallel int) bool {
