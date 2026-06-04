@@ -269,8 +269,8 @@ func (h *OpenAIGatewayHandler) hedgedResponsesEnabled(c *gin.Context, in openAIH
 	if in.RequireCompact {
 		return false, "remote_compact"
 	}
-	if strings.TrimSpace(in.SessionHash) != "" {
-		return false, "sticky_session"
+	if explicitSessionReason := openAIHedgedExplicitSessionReason(c, in.Body); explicitSessionReason != "" {
+		return false, explicitSessionReason
 	}
 	if strings.TrimSpace(gjson.GetBytes(in.Body, "previous_response_id").String()) != "" {
 		return false, "previous_response_id"
@@ -282,6 +282,21 @@ func (h *OpenAIGatewayHandler) hedgedResponsesEnabled(c *gin.Context, in openAIH
 		return false, "stateful_body"
 	}
 	return true, ""
+}
+
+func openAIHedgedExplicitSessionReason(c *gin.Context, body []byte) string {
+	if c != nil {
+		if strings.TrimSpace(c.GetHeader("session_id")) != "" {
+			return "session_id"
+		}
+		if strings.TrimSpace(c.GetHeader("conversation_id")) != "" {
+			return "conversation_id"
+		}
+	}
+	if strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()) != "" {
+		return "prompt_cache_key"
+	}
+	return ""
 }
 
 func (h *OpenAIGatewayHandler) logOpenAIHedgedSkipped(in openAIHedgedResponsesInput, reason string, candidateCount int, candidates []*openAIHedgedCandidate) {
