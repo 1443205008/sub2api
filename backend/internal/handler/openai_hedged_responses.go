@@ -269,7 +269,7 @@ func (h *OpenAIGatewayHandler) hedgedResponsesEnabled(c *gin.Context, in openAIH
 	if in.RequireCompact {
 		return false, "remote_compact"
 	}
-	if explicitSessionReason := openAIHedgedExplicitSessionReason(c, in.Body); explicitSessionReason != "" {
+	if explicitSessionReason := openAIHedgedExplicitSessionReason(c); explicitSessionReason != "" {
 		return false, explicitSessionReason
 	}
 	if strings.TrimSpace(gjson.GetBytes(in.Body, "previous_response_id").String()) != "" {
@@ -284,7 +284,7 @@ func (h *OpenAIGatewayHandler) hedgedResponsesEnabled(c *gin.Context, in openAIH
 	return true, ""
 }
 
-func openAIHedgedExplicitSessionReason(c *gin.Context, body []byte) string {
+func openAIHedgedExplicitSessionReason(c *gin.Context) string {
 	if c != nil {
 		if strings.TrimSpace(c.GetHeader("session_id")) != "" {
 			return "session_id"
@@ -292,9 +292,6 @@ func openAIHedgedExplicitSessionReason(c *gin.Context, body []byte) string {
 		if strings.TrimSpace(c.GetHeader("conversation_id")) != "" {
 			return "conversation_id"
 		}
-	}
-	if strings.TrimSpace(gjson.GetBytes(body, "prompt_cache_key").String()) != "" {
-		return "prompt_cache_key"
 	}
 	return ""
 }
