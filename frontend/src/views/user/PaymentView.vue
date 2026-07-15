@@ -71,13 +71,29 @@
                   <span class="font-medium text-gray-700 dark:text-gray-300">{{ t('payment.actualPay') }}</span>
                   <span class="text-lg font-bold text-primary-600 dark:text-primary-400">{{ formatSelectedPaymentAmount(totalAmount) }}</span>
                 </div>
-                <div v-if="balanceRechargeMultiplier !== 1" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
+                <div v-if="balanceRechargeMultiplier !== 1 || currentBonusRate > 0" class="flex justify-between" :class="{ 'border-t border-gray-200 pt-2 dark:border-dark-600': feeRate <= 0 }">
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                   <span class="text-gray-900 dark:text-white">${{ creditedAmount.toFixed(2) }}</span>
+                </div>
+                <div v-if="currentBonusRate > 0" class="flex justify-between text-green-600 dark:text-green-400">
+                  <span>{{ t('payment.rechargeBonus') }} ({{ currentBonusRate }}%)</span>
+                  <span>+${{ bonusAmount.toFixed(2) }}</span>
                 </div>
                 <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
                   {{ t('payment.rechargeRatePreview', { usd: balanceRechargeMultiplier.toFixed(2) }) }}
                 </p>
+                <div v-if="rechargeBonusTiers.length > 0" class="border-t border-gray-200 pt-2 dark:border-dark-600">
+                  <p class="mb-1.5 text-xs text-gray-500 dark:text-gray-400">{{ t('payment.rechargeBonusTiers') }}</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    <span
+                      v-for="tier in rechargeBonusTiers"
+                      :key="tier.min_amount"
+                      class="rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300"
+                    >
+                      {{ t('payment.rechargeBonusTier', { amount: tier.min_amount, rate: tier.bonus_rate }) }}
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
             <button :class="['btn w-full py-3 text-base font-medium', paymentButtonClass]" :disabled="!canSubmit || submitting" @click="handleSubmitRecharge">
@@ -494,7 +510,7 @@ function onPaymentSettled() {
 // All checkout data from single API call
 const checkout = ref<CheckoutInfoResponse>({
   methods: {}, global_min: 0, global_max: 0,
-  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
+  plans: [], balance_disabled: false, balance_recharge_multiplier: 1, recharge_bonus_tiers: [], subscription_usd_to_cny_rate: 0, recharge_fee_rate: 0, help_text: '', help_image_url: '', stripe_publishable_key: '',
 })
 
 const tabs = computed(() => {
@@ -511,12 +527,31 @@ const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
   return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
 })
+const rechargeBonusTiers = computed(() =>
+  [...(checkout.value.recharge_bonus_tiers || [])]
+    .filter(tier => Number.isFinite(tier.min_amount) && Number.isFinite(tier.bonus_rate))
+    .sort((a, b) => a.min_amount - b.min_amount)
+)
+const currentBonusRate = computed(() => {
+  let rate = 0
+  for (const tier of rechargeBonusTiers.value) {
+    if (validAmount.value < tier.min_amount) break
+    rate = tier.bonus_rate
+  }
+  return rate
+})
 // 订阅 CNY 换算汇率（1 USD = X CNY）。0 = 未配置，订阅保持 price 直付（与后端 opt-in 条件严格镜像）。
 const subscriptionUsdToCnyRate = computed(() => {
   const rate = checkout.value.subscription_usd_to_cny_rate
   return Number.isFinite(rate) && rate > 0 ? rate : 0
 })
-const creditedAmount = computed(() => Math.round((validAmount.value * balanceRechargeMultiplier.value) * 100) / 100)
+const baseCreditedAmount = computed(() => validAmount.value * balanceRechargeMultiplier.value)
+const creditedAmount = computed(() =>
+  Math.round((baseCreditedAmount.value * (1 + currentBonusRate.value / 100)) * 100) / 100
+)
+const bonusAmount = computed(() =>
+  Math.max(0, Math.round((creditedAmount.value - Math.round(baseCreditedAmount.value * 100) / 100) * 100) / 100)
+)
 
 // Adaptive grid: center single card, 2-col for 2 plans, 3-col for 3+
 const planGridClass = computed(() => {

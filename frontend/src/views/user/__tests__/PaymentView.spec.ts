@@ -105,6 +105,7 @@ function checkoutInfoFixture(overrides: Partial<CheckoutInfoResponse> = {}) {
     plans: [],
     balance_disabled: false,
     balance_recharge_multiplier: 1,
+    recharge_bonus_tiers: [],
     subscription_usd_to_cny_rate: 0,
     recharge_fee_rate: 0,
     help_text: '',
@@ -235,6 +236,55 @@ async function mountSubscriptionConfirm(options: Parameters<typeof checkoutInfoW
   await flushPromises()
   return wrapper
 }
+
+async function mountRecharge(checkout: Partial<CheckoutInfoResponse> = {}) {
+  vi.useRealTimers()
+  routeState.path = '/purchase'
+  routeState.query = {}
+  routerReplace.mockReset().mockResolvedValue(undefined)
+  routerPush.mockReset().mockResolvedValue(undefined)
+  createOrder.mockReset()
+  refreshUser.mockReset()
+  fetchActiveSubscriptions.mockReset().mockResolvedValue(undefined)
+  showError.mockReset()
+  showInfo.mockReset()
+  showWarning.mockReset()
+  getCheckoutInfo.mockReset().mockResolvedValue(checkoutInfoFixture(checkout))
+  window.localStorage.clear()
+
+  const wrapper = shallowMount(PaymentView, {
+    global: {
+      stubs: {
+        AppLayout: { template: '<div><slot /></div>' },
+        Teleport: true,
+        Transition: false,
+      },
+    },
+  })
+  await flushPromises()
+  await flushPromises()
+  return wrapper
+}
+
+describe('PaymentView recharge bonuses', () => {
+  it('previews the highest matching tier in credited balance', async () => {
+    const wrapper = await mountRecharge({
+      balance_recharge_multiplier: 0.14,
+      recharge_bonus_tiers: [
+        { min_amount: 500, bonus_rate: 20 },
+        { min_amount: 100, bonus_rate: 10 },
+      ],
+    })
+
+    const amountInput = wrapper.findComponent({ name: 'AmountInput' })
+    await amountInput.vm.$emit('update:modelValue', 100)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('$15.40')
+    expect(wrapper.text()).toContain('(10%)')
+    expect(wrapper.text()).toContain('+$1.40')
+  })
+})
 
 describe('PaymentView subscription confirmation amounts', () => {
   it('shows converted CNY pay amount using the subscription rate, not the balance multiplier', async () => {

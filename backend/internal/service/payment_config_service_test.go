@@ -201,6 +201,9 @@ func TestParsePaymentConfig(t *testing.T) {
 			if cfg.EnabledTypes[i] != want[i] {
 				t.Fatalf("EnabledTypes[%d] = %q, want %q (full=%v)", i, cfg.EnabledTypes[i], want[i], cfg.EnabledTypes)
 			}
+			if len(cfg.RechargeBonusTiers) != 0 {
+				t.Fatalf("expected empty RechargeBonusTiers, got %v", cfg.RechargeBonusTiers)
+			}
 		}
 	})
 
@@ -214,6 +217,36 @@ func TestParsePaymentConfig(t *testing.T) {
 			t.Fatalf("expected empty EnabledTypes for empty string, got %v", cfg.EnabledTypes)
 		}
 	})
+}
+
+func TestRechargeBonusTiersAreSortedAndValidated(t *testing.T) {
+	t.Parallel()
+
+	parsed := parseRechargeBonusTiers(`[{"min_amount":500,"bonus_rate":20},{"min_amount":100,"bonus_rate":10}]`)
+	if len(parsed) != 2 || parsed[0].MinAmount != 100 || parsed[1].MinAmount != 500 {
+		t.Fatalf("parsed tiers = %#v, want ascending minimum amounts", parsed)
+	}
+
+	invalid := []RechargeBonusTier{{MinAmount: 100, BonusRate: 10}, {MinAmount: 100, BonusRate: 20}}
+	if _, err := normalizeRechargeBonusTiers(invalid); err == nil {
+		t.Fatal("expected duplicate minimum amounts to be rejected")
+	}
+	if _, err := normalizeRechargeBonusTiers([]RechargeBonusTier{{MinAmount: 100, BonusRate: 100.01}}); err == nil {
+		t.Fatal("expected bonus rate above 100 to be rejected")
+	}
+}
+
+func TestUpdatePaymentConfigPersistsRechargeBonusTiers(t *testing.T) {
+	repo := &paymentConfigSettingRepoStub{values: map[string]string{}}
+	svc := &PaymentConfigService{settingRepo: repo}
+	tiers := []RechargeBonusTier{{MinAmount: 500, BonusRate: 20}, {MinAmount: 100, BonusRate: 10}}
+
+	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{RechargeBonusTiers: &tiers}); err != nil {
+		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
+	}
+	if got := repo.values[SettingRechargeBonusTiers]; got != `[{"min_amount":100,"bonus_rate":10},{"min_amount":500,"bonus_rate":20}]` {
+		t.Fatalf("stored tiers = %s", got)
+	}
 }
 
 func TestGetBasePaymentType(t *testing.T) {

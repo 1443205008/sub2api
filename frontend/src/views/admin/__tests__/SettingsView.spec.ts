@@ -412,6 +412,7 @@ const baseSettingsResponse = {
   payment_enabled_types: [],
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
+  payment_recharge_bonus_tiers: [],
   payment_subscription_usd_to_cny_rate: 0,
   payment_recharge_fee_rate: 0,
   payment_load_balance_strategy: "round-robin",
@@ -644,6 +645,32 @@ describe("admin SettingsView payment visible method controls", () => {
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_source");
     expect(payload).not.toHaveProperty("payment_visible_method_alipay_enabled");
     expect(payload).not.toHaveProperty("payment_visible_method_wxpay_enabled");
+  });
+
+  it("loads and submits recharge bonus tiers", async () => {
+    getSettings.mockResolvedValueOnce({
+      ...baseSettingsResponse,
+      payment_recharge_bonus_tiers: [
+        { min_amount: 100, bonus_rate: 10 },
+        { min_amount: 500, bonus_rate: 20 },
+      ],
+    });
+    const wrapper = mountView();
+
+    await flushPromises();
+    await openPaymentTab(wrapper);
+    expect(wrapper.text()).toContain("admin.settings.payment.rechargeBonusTiers");
+    await wrapper.find("form").trigger("submit.prevent");
+    await flushPromises();
+
+    expect(updateSettings).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payment_recharge_bonus_tiers: [
+          { min_amount: 100, bonus_rate: 10 },
+          { min_amount: 500, bonus_rate: 20 },
+        ],
+      }),
+    );
   });
 
   it("submits Anthropic cache TTL injection gateway setting", async () => {

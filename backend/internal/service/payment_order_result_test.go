@@ -238,6 +238,24 @@ func TestCalculateCreditedBalanceStillUsesRechargeMultiplier(t *testing.T) {
 	}
 }
 
+func TestCalculateCreditedBalanceWithBonusUsesHighestMatchingTier(t *testing.T) {
+	t.Parallel()
+
+	tiers := []RechargeBonusTier{
+		{MinAmount: 500, BonusRate: 20},
+		{MinAmount: 100, BonusRate: 10},
+	}
+	if got := calculateCreditedBalanceWithBonus(99.99, 0.14, tiers); got != 14 {
+		t.Fatalf("credited balance below first tier = %v, want 14", got)
+	}
+	if got := calculateCreditedBalanceWithBonus(100, 0.14, tiers); got != 15.4 {
+		t.Fatalf("credited balance at first tier = %v, want 15.4", got)
+	}
+	if got := calculateCreditedBalanceWithBonus(500, 0.14, tiers); got != 84 {
+		t.Fatalf("credited balance at second tier = %v, want 84", got)
+	}
+}
+
 func TestCalculateCreateOrderPayAmountRejectsFractionalZeroDecimal(t *testing.T) {
 	t.Parallel()
 

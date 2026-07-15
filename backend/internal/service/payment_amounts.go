@@ -32,6 +32,28 @@ func calculateCreditedBalance(paymentAmount, multiplier float64) float64 {
 		InexactFloat64()
 }
 
+func calculateRechargeBonusRate(paymentAmount float64, tiers []RechargeBonusTier) float64 {
+	bonusRate := 0.0
+	matchedMinAmount := -1.0
+	for _, tier := range tiers {
+		if paymentAmount >= tier.MinAmount && tier.MinAmount > matchedMinAmount {
+			matchedMinAmount = tier.MinAmount
+			bonusRate = tier.BonusRate
+		}
+	}
+	return bonusRate
+}
+
+func calculateCreditedBalanceWithBonus(paymentAmount, multiplier float64, tiers []RechargeBonusTier) float64 {
+	bonusRate := calculateRechargeBonusRate(paymentAmount, tiers)
+	return decimal.NewFromFloat(paymentAmount).
+		Mul(decimal.NewFromFloat(normalizeBalanceRechargeMultiplier(multiplier))).
+		Mul(decimal.NewFromFloat(100 + bonusRate)).
+		Div(decimal.NewFromInt(100)).
+		Round(2).
+		InexactFloat64()
+}
+
 func calculateGatewayRefundAmount(orderAmount, payAmount, refundAmount float64, currency string) float64 {
 	if orderAmount <= 0 || payAmount <= 0 || refundAmount <= 0 {
 		return 0
