@@ -180,6 +180,18 @@ func (_u *GroupUpdate) AddPeakRateMultiplier(v float64) *GroupUpdate {
 	return _u
 }
 
+// SetRateTimeRules sets the "rate_time_rules" field.
+func (_u *GroupUpdate) SetRateTimeRules(v []domain.GroupRateTimeRule) *GroupUpdate {
+	_u.mutation.SetRateTimeRules(v)
+	return _u
+}
+
+// AppendRateTimeRules appends value to the "rate_time_rules" field.
+func (_u *GroupUpdate) AppendRateTimeRules(v []domain.GroupRateTimeRule) *GroupUpdate {
+	_u.mutation.AppendRateTimeRules(v)
+	return _u
+}
+
 // SetIsExclusive sets the "is_exclusive" field.
 func (_u *GroupUpdate) SetIsExclusive(v bool) *GroupUpdate {
 	_u.mutation.SetIsExclusive(v)
@@ -1267,6 +1279,14 @@ func (_u *GroupUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
 		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
 	}
+	if value, ok := _u.mutation.RateTimeRules(); ok {
+		_spec.SetField(group.FieldRateTimeRules, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRateTimeRules(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldRateTimeRules, value)
+		})
+	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)
 	}
@@ -1937,6 +1957,18 @@ func (_u *GroupUpdateOne) SetNillablePeakRateMultiplier(v *float64) *GroupUpdate
 // AddPeakRateMultiplier adds value to the "peak_rate_multiplier" field.
 func (_u *GroupUpdateOne) AddPeakRateMultiplier(v float64) *GroupUpdateOne {
 	_u.mutation.AddPeakRateMultiplier(v)
+	return _u
+}
+
+// SetRateTimeRules sets the "rate_time_rules" field.
+func (_u *GroupUpdateOne) SetRateTimeRules(v []domain.GroupRateTimeRule) *GroupUpdateOne {
+	_u.mutation.SetRateTimeRules(v)
+	return _u
+}
+
+// AppendRateTimeRules appends value to the "rate_time_rules" field.
+func (_u *GroupUpdateOne) AppendRateTimeRules(v []domain.GroupRateTimeRule) *GroupUpdateOne {
+	_u.mutation.AppendRateTimeRules(v)
 	return _u
 }
 
@@ -3056,6 +3088,14 @@ func (_u *GroupUpdateOne) sqlSave(ctx context.Context) (_node *Group, err error)
 	}
 	if value, ok := _u.mutation.AddedPeakRateMultiplier(); ok {
 		_spec.AddField(group.FieldPeakRateMultiplier, field.TypeFloat64, value)
+	}
+	if value, ok := _u.mutation.RateTimeRules(); ok {
+		_spec.SetField(group.FieldRateTimeRules, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedRateTimeRules(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, group.FieldRateTimeRules, value)
+		})
 	}
 	if value, ok := _u.mutation.IsExclusive(); ok {
 		_spec.SetField(group.FieldIsExclusive, field.TypeBool, value)

@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 type OpenAIMessagesDispatchModelConfig = domain.OpenAIMessagesDispatchModelConfig
 type GroupModelsListConfig = domain.GroupModelsListConfig
+type GroupRateTimeRule = domain.GroupRateTimeRule
 
 type Group struct {
 	ID             int64
@@ -25,9 +27,11 @@ type Group struct {
 	PeakStart          string
 	PeakEnd            string
 	PeakRateMultiplier float64
-	IsExclusive        bool
-	Status             string
-	Hydrated           bool // indicates the group was loaded from a trusted repository source
+	// RateTimeRules 是新的多时段叠加倍率配置。存在规则时优先于旧 peak_* 字段。
+	RateTimeRules []GroupRateTimeRule
+	IsExclusive   bool
+	Status        string
+	Hydrated      bool // indicates the group was loaded from a trusted repository source
 
 	SubscriptionType    string
 	DailyLimitUSD       *float64
@@ -232,13 +236,30 @@ func parseMinutes(hhmm string) (int, bool) {
 	return h*60 + m, true
 }
 
-// PeakMultiplierAt 返回指定时刻 now 的高峰因子。
-//   - 未启用 / 未配置 / 配置非法（start>=end 或格式错误） / 非高峰时段 → 返回 1.0（安全降级）
-//   - 区间为左闭右开 [PeakStart, PeakEnd)，仅支持当日区间，不支持跨天（如 22:00-次日02:00）
+// PeakMultiplierAt 返回指定时刻 now 的时段叠加因子。
+//   - RateTimeRules 存在时优先使用新规则，左闭右开且支持跨午夜。
+//   - 新规则为空时回退到旧 peak_* 单时段配置。
+//   - 未配置、未命中时段或运行时发现非法规则时返回 1.0。
 //   - 时刻基于全局系统时区（timezone.Location）判定
 //
 // 该方法是纯函数，不读取任何外部状态，便于单测。
 func (g *Group) PeakMultiplierAt(now time.Time) float64 {
+	if g != nil && len(g.RateTimeRules) > 0 {
+		t := now.In(timezone.Location())
+		cur := t.Hour()*60 + t.Minute()
+		for _, rule := range g.RateTimeRules {
+			start, okStart := parseMinutes(rule.Start)
+			end, okEnd := parseMinutes(rule.End)
+			if !okStart || !okEnd || start == end || rule.Multiplier < 0 || math.IsNaN(rule.Multiplier) || math.IsInf(rule.Multiplier, 0) {
+				continue
+			}
+			if (start < end && cur >= start && cur < end) ||
+				(start > end && (cur >= start || cur < end)) {
+				return rule.Multiplier
+			}
+		}
+		return 1.0
+	}
 	if g == nil || !g.IsSubscriptionType() || !g.PeakRateEnabled || g.PeakStart == "" || g.PeakEnd == "" {
 		return 1.0
 	}
@@ -253,6 +274,73 @@ func (g *Group) PeakMultiplierAt(now time.Time) float64 {
 		return g.PeakRateMultiplier
 	}
 	return 1.0
+}
+
+// NormalizeGroupRateTimeRules trims rule times and returns an owned slice.
+func NormalizeGroupRateTimeRules(rules []GroupRateTimeRule) []GroupRateTimeRule {
+	if len(rules) == 0 {
+		return []GroupRateTimeRule{}
+	}
+	normalized := make([]GroupRateTimeRule, len(rules))
+	for i, rule := range rules {
+		normalized[i] = GroupRateTimeRule{
+			Start:      strings.TrimSpace(rule.Start),
+			End:        strings.TrimSpace(rule.End),
+			Multiplier: rule.Multiplier,
+		}
+	}
+	return normalized
+}
+
+// ValidateGroupRateTimeRules validates daily time windows. Windows use
+// [start,end), may cross midnight, and must not overlap.
+func ValidateGroupRateTimeRules(rules []GroupRateTimeRule) error {
+	if len(rules) > 24 {
+		return errors.New("rate_time_rules 最多支持 24 条规则")
+	}
+	occupied := make([]int, 24*60)
+	for i := range occupied {
+		occupied[i] = -1
+	}
+	for i, rule := range rules {
+		start, okStart := parseMinutes(strings.TrimSpace(rule.Start))
+		if !okStart {
+			return fmt.Errorf("rate_time_rules[%d].start 格式应为 HH:MM", i)
+		}
+		end, okEnd := parseMinutes(strings.TrimSpace(rule.End))
+		if !okEnd {
+			return fmt.Errorf("rate_time_rules[%d].end 格式应为 HH:MM", i)
+		}
+		if start == end {
+			return fmt.Errorf("rate_time_rules[%d] 的开始和结束时间不能相同", i)
+		}
+		if rule.Multiplier < 0 || math.IsNaN(rule.Multiplier) || math.IsInf(rule.Multiplier, 0) {
+			return fmt.Errorf("rate_time_rules[%d].multiplier 必须是大于等于 0 的有限数", i)
+		}
+
+		mark := func(from, to int) error {
+			for minute := from; minute < to; minute++ {
+				if occupied[minute] >= 0 {
+					return fmt.Errorf("rate_time_rules[%d] 与 rate_time_rules[%d] 时段重叠", i, occupied[minute])
+				}
+				occupied[minute] = i
+			}
+			return nil
+		}
+		if start < end {
+			if err := mark(start, end); err != nil {
+				return err
+			}
+			continue
+		}
+		if err := mark(start, 24*60); err != nil {
+			return err
+		}
+		if err := mark(0, end); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ValidatePeakRateConfig 是高峰倍率配置的唯一校验来源，供 handler 与 service 层共用。

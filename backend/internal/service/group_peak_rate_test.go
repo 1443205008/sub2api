@@ -146,6 +146,90 @@ func TestPeakMultiplierAt_StandardTypeDegradesToOne(t *testing.T) {
 	}
 }
 
+func TestRateTimeRulesMultiplierAt_MultipleWindowsAndCrossMidnight(t *testing.T) {
+	g := &Group{
+		SubscriptionType: SubscriptionTypeStandard,
+		RateTimeRules: []GroupRateTimeRule{
+			{Start: "08:00", End: "12:00", Multiplier: 0.8},
+			{Start: "18:00", End: "22:00", Multiplier: 1.5},
+			{Start: "22:00", End: "02:00", Multiplier: 2},
+		},
+	}
+	cases := []struct {
+		at   time.Time
+		want float64
+	}{
+		{at(7, 59), 1},
+		{at(8, 0), 0.8},
+		{at(12, 0), 1},
+		{at(18, 0), 1.5},
+		{at(22, 0), 2},
+		{at(23, 59), 2},
+		{at(0, 0), 2},
+		{at(1, 59), 2},
+		{at(2, 0), 1},
+	}
+	for _, tc := range cases {
+		if got := g.PeakMultiplierAt(tc.at); got != tc.want {
+			t.Fatalf("at %s: got %v, want %v", tc.at.Format("15:04"), got, tc.want)
+		}
+	}
+}
+
+func TestValidateGroupRateTimeRules(t *testing.T) {
+	tests := []struct {
+		name    string
+		rules   []GroupRateTimeRule
+		wantErr bool
+	}{
+		{name: "empty"},
+		{name: "adjacent", rules: []GroupRateTimeRule{
+			{Start: "08:00", End: "12:00", Multiplier: 1.2},
+			{Start: "12:00", End: "18:00", Multiplier: 1.5},
+		}},
+		{name: "cross midnight", rules: []GroupRateTimeRule{
+			{Start: "22:00", End: "02:00", Multiplier: 2},
+			{Start: "02:00", End: "08:00", Multiplier: 0.5},
+		}},
+		{name: "overlap", rules: []GroupRateTimeRule{
+			{Start: "08:00", End: "12:00", Multiplier: 1},
+			{Start: "11:59", End: "14:00", Multiplier: 1},
+		}, wantErr: true},
+		{name: "cross midnight overlap", rules: []GroupRateTimeRule{
+			{Start: "22:00", End: "02:00", Multiplier: 1},
+			{Start: "01:00", End: "03:00", Multiplier: 1},
+		}, wantErr: true},
+		{name: "equal bounds", rules: []GroupRateTimeRule{
+			{Start: "10:00", End: "10:00", Multiplier: 1},
+		}, wantErr: true},
+		{name: "invalid time", rules: []GroupRateTimeRule{
+			{Start: "24:00", End: "10:00", Multiplier: 1},
+		}, wantErr: true},
+		{name: "negative multiplier", rules: []GroupRateTimeRule{
+			{Start: "08:00", End: "10:00", Multiplier: -1},
+		}, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGroupRateTimeRules(tt.rules)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ValidateGroupRateTimeRules() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestRateTimeRulesTakePrecedenceOverLegacyPeakRate(t *testing.T) {
+	g := newPeakGroup(true, "14:00", "18:00", 3)
+	g.RateTimeRules = []GroupRateTimeRule{{Start: "09:00", End: "10:00", Multiplier: 2}}
+	if got := g.PeakMultiplierAt(at(9, 30)); got != 2 {
+		t.Fatalf("new rule multiplier = %v, want 2", got)
+	}
+	if got := g.PeakMultiplierAt(at(15, 0)); got != 1 {
+		t.Fatalf("legacy rule must not apply when new rules exist: got %v", got)
+	}
+}
+
 // TestPeakMultiplier_GatewayBillingSequence 调用 gateway_service.recordUsageCore 与
 // openai_gateway_service.RecordUsage 共用的 computePeakAwareMultipliers，验证计费叠加顺序：
 // 图片按次倍率基于基础倍率算出且不受高峰影响，高峰因子只乘入 token 倍率。
@@ -212,6 +296,7 @@ func TestPeakMultiplier_SnapshotRoundTrip(t *testing.T) {
 		User:  &User{ID: 1, Status: StatusActive, Role: RoleUser},
 		Group: newPeakGroup(true, "14:00", "18:00", 3.0),
 	}
+	apiKey.Group.RateTimeRules = []GroupRateTimeRule{{Start: "22:00", End: "02:00", Multiplier: 1.5}}
 	svc := &APIKeyService{}
 
 	snapshot := svc.snapshotFromAPIKey(context.Background(), apiKey)
@@ -229,10 +314,10 @@ func TestPeakMultiplier_SnapshotRoundTrip(t *testing.T) {
 		restored.Group.PeakRateMultiplier != 3.0 {
 		t.Fatalf("peak fields lost in snapshot round-trip: %+v", restored.Group)
 	}
-	if got := restored.Group.PeakMultiplierAt(at(15, 30)); got != 3.0 {
-		t.Fatalf("peak hour multiplier after round-trip: got %v, want 3.0", got)
+	if len(restored.Group.RateTimeRules) != 1 || restored.Group.RateTimeRules[0].Multiplier != 1.5 {
+		t.Fatalf("rate time rules lost in snapshot round-trip: %+v", restored.Group.RateTimeRules)
 	}
-	if got := restored.Group.PeakMultiplierAt(at(20, 0)); got != 1.0 {
-		t.Fatalf("off-peak multiplier after round-trip: got %v, want 1.0", got)
+	if got := restored.Group.PeakMultiplierAt(at(23, 30)); got != 1.5 {
+		t.Fatalf("scheduled multiplier after round-trip: got %v, want 1.5", got)
 	}
 }

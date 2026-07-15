@@ -80,7 +80,8 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		SetPeakRateEnabled(groupIn.PeakRateEnabled).
 		SetPeakStart(groupIn.PeakStart).
 		SetPeakEnd(groupIn.PeakEnd).
-		SetPeakRateMultiplier(groupIn.PeakRateMultiplier)
+		SetPeakRateMultiplier(groupIn.PeakRateMultiplier).
+		SetRateTimeRules(groupIn.RateTimeRules)
 
 	// 设置模型路由配置
 	if groupIn.ModelRouting != nil {
@@ -168,7 +169,8 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		SetPeakRateEnabled(groupIn.PeakRateEnabled).
 		SetPeakStart(groupIn.PeakStart).
 		SetPeakEnd(groupIn.PeakEnd).
-		SetPeakRateMultiplier(groupIn.PeakRateMultiplier)
+		SetPeakRateMultiplier(groupIn.PeakRateMultiplier).
+		SetRateTimeRules(groupIn.RateTimeRules)
 
 	// 显式处理可空字段：nil 需要 clear，非 nil 需要 set。
 	if groupIn.DailyLimitUSD != nil {

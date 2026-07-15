@@ -200,6 +200,10 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if err := ValidatePeakRateConfig(subscriptionType, peakRateEnabled, peakStart, peakEnd, peakRateMultiplier); err != nil {
 		return nil, err
 	}
+	rateTimeRules := NormalizeGroupRateTimeRules(input.RateTimeRules)
+	if err := ValidateGroupRateTimeRules(rateTimeRules); err != nil {
+		return nil, err
+	}
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
@@ -282,6 +286,7 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		PeakStart:                       peakStart,
 		PeakEnd:                         peakEnd,
 		PeakRateMultiplier:              peakRateMultiplier,
+		RateTimeRules:                   rateTimeRules,
 		ImagePrice1K:                    imagePrice1K,
 		ImagePrice2K:                    imagePrice2K,
 		ImagePrice4K:                    imagePrice4K,
@@ -525,6 +530,12 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	// 防止单独修改 start/end 导致最终 start>=end 等非法配置入库。与 CreateGroup 同一收口。
 	group.PeakRateEnabled, group.PeakStart, group.PeakEnd, group.PeakRateMultiplier = NormalizePeakRateConfig(group.SubscriptionType, group.PeakRateEnabled, group.PeakStart, group.PeakEnd, group.PeakRateMultiplier)
 	if err := ValidatePeakRateConfig(group.SubscriptionType, group.PeakRateEnabled, group.PeakStart, group.PeakEnd, group.PeakRateMultiplier); err != nil {
+		return nil, err
+	}
+	if input.RateTimeRules != nil {
+		group.RateTimeRules = NormalizeGroupRateTimeRules(*input.RateTimeRules)
+	}
+	if err := ValidateGroupRateTimeRules(group.RateTimeRules); err != nil {
 		return nil, err
 	}
 	if input.ImagePrice1K != nil {

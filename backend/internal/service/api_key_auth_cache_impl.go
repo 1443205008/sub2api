@@ -287,6 +287,7 @@ func (s *APIKeyService) snapshotFromAPIKey(ctx context.Context, apiKey *APIKey) 
 			PeakStart:                       apiKey.Group.PeakStart,
 			PeakEnd:                         apiKey.Group.PeakEnd,
 			PeakRateMultiplier:              apiKey.Group.PeakRateMultiplier,
+			RateTimeRules:                   apiKey.Group.RateTimeRules,
 		}
 	}
 	return snapshot
@@ -371,6 +372,7 @@ func (s *APIKeyService) snapshotToAPIKey(key string, snapshot *APIKeyAuthSnapsho
 			PeakStart:                       snapshot.Group.PeakStart,
 			PeakEnd:                         snapshot.Group.PeakEnd,
 			PeakRateMultiplier:              snapshot.Group.PeakRateMultiplier,
+			RateTimeRules:                   snapshot.Group.RateTimeRules,
 		}
 	}
 	s.compileAPIKeyIPRules(apiKey)

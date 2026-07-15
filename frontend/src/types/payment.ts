@@ -123,6 +123,7 @@ export interface SubscriptionPlan {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
+  rate_time_rules?: Array<{ start: string; end: string; multiplier: number }>
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null

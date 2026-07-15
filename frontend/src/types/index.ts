@@ -503,6 +503,12 @@ export interface OpenAIMessagesDispatchModelConfig {
   exact_model_mappings?: Record<string, string>
 }
 
+export interface GroupRateTimeRule {
+  start: string
+  end: string
+  multiplier: number
+}
+
 export interface Group {
   id: number
   name: string
@@ -538,6 +544,7 @@ export interface Group {
   peak_start: string
   peak_end: string
   peak_rate_multiplier: number
+  rate_time_rules?: GroupRateTimeRule[]
   // Claude Code 客户端限制
   claude_code_only: boolean
   fallback_group_id: number | null
@@ -671,6 +678,7 @@ export interface CreateGroupRequest {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
+  rate_time_rules?: GroupRateTimeRule[]
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -719,6 +727,7 @@ export interface UpdateGroupRequest {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
+  rate_time_rules?: GroupRateTimeRule[]
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null

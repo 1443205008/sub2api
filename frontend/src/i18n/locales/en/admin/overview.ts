@@ -954,6 +954,16 @@ export default {
         peakMultiplier: 'Peak multiplier',
         multiplierHint: 'Applies to token billing multiplier; image tokens in token billing are also affected. 0 means peak token requests are billed at 0x.'
       },
+      rateTimeRules: {
+        title: 'Time-based multipliers',
+        hint: 'Apply an additional token billing multiplier on top of the base rate using the system timezone. Overnight windows such as 22:00-02:00 are supported; windows cannot overlap.',
+        add: 'Add time window',
+        empty: 'No time-based rules. Only the base multiplier is currently used.',
+        start: 'Start time',
+        end: 'End time',
+        multiplier: 'Additional multiplier',
+        remove: 'Remove time window'
+      },
       modelsList: {
         title: 'Custom /v1/models Model List',
         hint: 'Only changes the /v1/models response. Whitelist model calls and account routing are unchanged.',

@@ -5,6 +5,7 @@
 
 import { apiClient } from './client'
 import type { BillingMode } from '@/constants/channel'
+import type { GroupRateTimeRule } from '@/types'
 
 export interface UserAvailableGroup {
   id: number
@@ -18,6 +19,7 @@ export interface UserAvailableGroup {
   peak_start: string
   peak_end: string
   peak_rate_multiplier: number
+  rate_time_rules: GroupRateTimeRule[]
   /** true = 专属分组（小范围授权）；false = 公开分组。 */
   is_exclusive: boolean
 }

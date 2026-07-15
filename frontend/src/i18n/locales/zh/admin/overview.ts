@@ -951,6 +951,16 @@ export default {
         peakMultiplier: '高峰倍率',
         multiplierHint: '作用于 token 计费倍率；token 计费的图片 token 同样适用，0 表示高峰 token 请求按 0 倍计费'
       },
+      rateTimeRules: {
+        title: '时段倍率',
+        hint: '在基础倍率上叠加不同时段的 token 计费倍率，按系统时区生效；支持 22:00-02:00 跨午夜，时段不能重叠。',
+        add: '添加时段',
+        empty: '暂无时段规则，当前仅使用基础倍率。',
+        start: '开始时间',
+        end: '结束时间',
+        multiplier: '叠加倍率',
+        remove: '删除时段'
+      },
       modelsList: {
         title: '自定义 /v1/models 模型列表',
         hint: '仅影响 /v1/models 展示结果，不影响白名单模型调用和账号调度。',

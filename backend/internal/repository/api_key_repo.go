@@ -967,6 +967,7 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		PeakStart:                       g.PeakStart,
 		PeakEnd:                         g.PeakEnd,
 		PeakRateMultiplier:              g.PeakRateMultiplier,
+		RateTimeRules:                   g.RateTimeRules,
 		CreatedAt:                       g.CreatedAt,
 		UpdatedAt:                       g.UpdatedAt,
 	}

@@ -152,6 +152,7 @@
                   :peak-start="row.group.peak_start"
                   :peak-end="row.group.peak_end"
                   :peak-rate-multiplier="row.group.peak_rate_multiplier"
+                  :rate-time-rules="row.group.rate_time_rules"
                 />
                 <span v-else class="text-sm text-gray-400 dark:text-dark-500">{{
                   t('keys.noGroup')
@@ -486,6 +487,7 @@
                 :peak-start="(option as unknown as GroupOption).peakStart"
                 :peak-end="(option as unknown as GroupOption).peakEnd"
                 :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
+                :rate-time-rules="(option as unknown as GroupOption).rateTimeRules"
               />
               <span v-else class="text-gray-400">{{ t('keys.selectGroup') }}</span>
             </template>
@@ -500,6 +502,7 @@
                 :peak-start="(option as unknown as GroupOption).peakStart"
                 :peak-end="(option as unknown as GroupOption).peakEnd"
                 :peak-rate-multiplier="(option as unknown as GroupOption).peakRateMultiplier"
+                :rate-time-rules="(option as unknown as GroupOption).rateTimeRules"
                 :description="(option as unknown as GroupOption).description"
                 :selected="selected"
               />
@@ -1099,6 +1102,7 @@
               :peak-start="option.peakStart"
               :peak-end="option.peakEnd"
               :peak-rate-multiplier="option.peakRateMultiplier"
+              :rate-time-rules="option.rateTimeRules"
               :description="option.description"
               :selected="
                 selectedKeyForGroup?.group_id === option.value ||
@@ -1167,6 +1171,7 @@ interface GroupOption {
   peakStart: string
   peakEnd: string
   peakRateMultiplier: number
+  rateTimeRules: Group['rate_time_rules']
   subscriptionType: SubscriptionType
   platform: GroupPlatform
 }
@@ -1419,6 +1424,7 @@ const groupOptions = computed(() =>
     peakStart: group.peak_start,
     peakEnd: group.peak_end,
     peakRateMultiplier: group.peak_rate_multiplier,
+    rateTimeRules: group.rate_time_rules ?? [],
     subscriptionType: group.subscription_type,
     platform: group.platform
   }))

@@ -11,10 +11,14 @@ export interface PeakRateFields {
   peak_start?: string
   peak_end?: string
   peak_rate_multiplier?: number
+  rate_time_rules?: Array<{ start: string; end: string; multiplier: number }>
 }
 
 export function hasPeakRate(fields?: PeakRateFields | null): boolean {
-  return Boolean(fields?.peak_rate_enabled && fields.peak_start && fields.peak_end)
+  return Boolean(
+    fields?.rate_time_rules?.length ||
+      (fields?.peak_rate_enabled && fields.peak_start && fields.peak_end)
+  )
 }
 
 /** "+08:00" → "UTC+08:00"；旧缓存无该字段时返回空串，调用方降级为不带时区标注 */
@@ -28,6 +32,10 @@ export function formatPeakRateWindow(
   tzLabel?: string
 ): string {
   if (!hasPeakRate(fields) || !fields) return ''
-  const base = `${fields.peak_start}-${fields.peak_end} ×${fields.peak_rate_multiplier ?? 1}`
+  const base = fields.rate_time_rules?.length
+    ? fields.rate_time_rules
+        .map((rule) => `${rule.start}-${rule.end} ×${rule.multiplier}`)
+        .join('; ')
+    : `${fields.peak_start}-${fields.peak_end} ×${fields.peak_rate_multiplier ?? 1}`
   return tzLabel ? `${base} (${tzLabel})` : base
 }

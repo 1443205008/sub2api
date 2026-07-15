@@ -686,6 +686,45 @@ func TestAdminService_UpdateGroup_ClearsPeakRateWhenChangingToStandard(t *testin
 	require.Equal(t, 1.0, repo.updated.PeakRateMultiplier)
 }
 
+func TestAdminService_CreateGroup_PersistsRateTimeRulesForStandardGroup(t *testing.T) {
+	repo := &groupRepoStubForAdmin{}
+	svc := &adminServiceImpl{groupRepo: repo}
+
+	group, err := svc.CreateGroup(context.Background(), &CreateGroupInput{
+		Name:             "scheduled-rate-group",
+		RateMultiplier:   1,
+		SubscriptionType: SubscriptionTypeStandard,
+		RateTimeRules: []GroupRateTimeRule{
+			{Start: " 08:00 ", End: "12:00", Multiplier: 0.8},
+			{Start: "22:00", End: "02:00", Multiplier: 1.5},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, group)
+	require.Equal(t, []GroupRateTimeRule{
+		{Start: "08:00", End: "12:00", Multiplier: 0.8},
+		{Start: "22:00", End: "02:00", Multiplier: 1.5},
+	}, repo.created.RateTimeRules)
+}
+
+func TestAdminService_UpdateGroup_RejectsOverlappingRateTimeRules(t *testing.T) {
+	repo := &groupRepoStubForAdmin{getByID: &Group{
+		ID:       1,
+		Name:     "existing-group",
+		Platform: PlatformOpenAI,
+		Status:   StatusActive,
+	}}
+	svc := &adminServiceImpl{groupRepo: repo}
+	rules := []GroupRateTimeRule{
+		{Start: "22:00", End: "02:00", Multiplier: 2},
+		{Start: "01:00", End: "03:00", Multiplier: 1.2},
+	}
+
+	_, err := svc.UpdateGroup(context.Background(), 1, &UpdateGroupInput{RateTimeRules: &rules})
+	require.ErrorContains(t, err, "时段重叠")
+	require.Nil(t, repo.updated)
+}
+
 func TestAdminService_CreateGroup_NormalizesMessagesDispatchModelConfig(t *testing.T) {
 	repo := &groupRepoStubForAdmin{}
 	svc := &adminServiceImpl{groupRepo: repo}

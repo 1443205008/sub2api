@@ -36,6 +36,8 @@ const (
 	FieldPeakEnd = "peak_end"
 	// FieldPeakRateMultiplier holds the string denoting the peak_rate_multiplier field in the database.
 	FieldPeakRateMultiplier = "peak_rate_multiplier"
+	// FieldRateTimeRules holds the string denoting the rate_time_rules field in the database.
+	FieldRateTimeRules = "rate_time_rules"
 	// FieldIsExclusive holds the string denoting the is_exclusive field in the database.
 	FieldIsExclusive = "is_exclusive"
 	// FieldStatus holds the string denoting the status field in the database.
@@ -197,6 +199,7 @@ var Columns = []string{
 	FieldPeakStart,
 	FieldPeakEnd,
 	FieldPeakRateMultiplier,
+	FieldRateTimeRules,
 	FieldIsExclusive,
 	FieldStatus,
 	FieldPlatform,
@@ -286,6 +289,8 @@ var (
 	PeakEndValidator func(string) error
 	// DefaultPeakRateMultiplier holds the default value on creation for the "peak_rate_multiplier" field.
 	DefaultPeakRateMultiplier float64
+	// DefaultRateTimeRules holds the default value on creation for the "rate_time_rules" field.
+	DefaultRateTimeRules []domain.GroupRateTimeRule
 	// DefaultIsExclusive holds the default value on creation for the "is_exclusive" field.
 	DefaultIsExclusive bool
 	// DefaultStatus holds the default value on creation for the "status" field.
