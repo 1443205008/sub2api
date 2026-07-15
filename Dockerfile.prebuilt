@@ -1,0 +1,50 @@
+# syntax=docker/dockerfile:1.7
+
+# Runtime image for binaries compiled outside Docker (for example in GitHub Actions).
+ARG ALPINE_IMAGE=alpine:3.21
+ARG POSTGRES_IMAGE=postgres:18-alpine
+
+FROM --platform=$TARGETPLATFORM ${POSTGRES_IMAGE} AS pg-client
+
+FROM --platform=$TARGETPLATFORM ${ALPINE_IMAGE}
+
+ARG TARGETOS=linux
+ARG TARGETARCH
+
+LABEL maintainer="godsama"
+LABEL description="Sub2API - AI API Gateway Platform"
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    su-exec \
+    libpq \
+    zstd-libs \
+    lz4-libs \
+    krb5-libs \
+    libldap \
+    libedit \
+    && rm -rf /var/cache/apk/*
+
+COPY --from=pg-client /usr/local/bin/pg_dump /usr/local/bin/pg_dump
+COPY --from=pg-client /usr/local/bin/psql /usr/local/bin/psql
+COPY --from=pg-client /usr/local/lib/libpq.so.5* /usr/local/lib/
+
+RUN addgroup -g 1000 sub2api && \
+    adduser -u 1000 -G sub2api -s /bin/sh -D sub2api
+
+WORKDIR /app
+
+COPY --chmod=0755 build/docker/${TARGETOS}-${TARGETARCH}/sub2api /app/sub2api
+COPY --chown=sub2api:sub2api backend/resources /app/resources
+COPY --chmod=0755 deploy/docker-entrypoint.sh /app/docker-entrypoint.sh
+
+RUN mkdir -p /app/data && chown sub2api:sub2api /app/data
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD wget -q -T 5 -O /dev/null http://localhost:${SERVER_PORT:-8080}/health || exit 1
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+CMD ["/app/sub2api"]

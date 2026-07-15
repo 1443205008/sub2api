@@ -1,0 +1,236 @@
+name: Docker Hub
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Optional Docker tag (defaults to the selected branch)
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dockerhub-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  IMAGE_NAME: godsama/sub2api
+
+jobs:
+  frontend:
+    if: github.repository == '1443205008/sub2api'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Validate Docker Hub credentials
+        env:
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -z "$DOCKERHUB_TOKEN" ]; then
+            echo "Repository secret DOCKERHUB_TOKEN is required" >&2
+            exit 1
+          fi
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 9.15.9
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: pnpm install --frozen-lockfile
+
+      - name: Build frontend
+        working-directory: frontend
+        run: pnpm run build
+
+      - name: Upload embedded frontend
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-dist
+          path: backend/internal/web/dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  binaries:
+    needs: frontend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - amd64
+          - arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download embedded frontend
+        uses: actions/download-artifact@v8
+        with:
+          name: frontend-dist
+          path: backend/internal/web/dist/
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          check-latest: false
+          cache-dependency-path: backend/go.sum
+
+      - name: Build linux/${{ matrix.arch }} binary
+        working-directory: backend
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          MANUAL_TAG: ${{ inputs.tag }}
+        run: |
+          VERSION_VALUE="${MANUAL_TAG#v}"
+          if [ -z "$VERSION_VALUE" ]; then
+            VERSION_VALUE="$(./scripts/resolve-version.sh)"
+          fi
+          BUILD_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          OUTPUT_DIR="../build/docker/linux-${TARGET_ARCH}"
+          mkdir -p "$OUTPUT_DIR"
+          CGO_ENABLED=0 GOOS=linux GOARCH="$TARGET_ARCH" go build \
+            -tags embed \
+            -trimpath \
+            -ldflags="-s -w -X main.Version=${VERSION_VALUE} -X main.Commit=${GITHUB_SHA} -X main.Date=${BUILD_DATE} -X main.BuildType=release" \
+            -o "${OUTPUT_DIR}/sub2api" \
+            ./cmd/server
+          file "${OUTPUT_DIR}/sub2api"
+
+      - name: Upload linux/${{ matrix.arch }} binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: binary-linux-${{ matrix.arch }}
+          path: build/docker/linux-${{ matrix.arch }}/sub2api
+          if-no-files-found: error
+          retention-days: 1
+
+  images:
+    needs: binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch:
+          - amd64
+          - arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Download linux/${{ matrix.arch }} binary
+        uses: actions/download-artifact@v8
+        with:
+          name: binary-linux-${{ matrix.arch }}
+          path: build/docker/linux-${{ matrix.arch }}/
+
+      - name: Restore executable permission
+        run: chmod 0755 build/docker/linux-${{ matrix.arch }}/sub2api
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: godsama
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push linux/${{ matrix.arch }} image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.prebuilt
+          platforms: linux/${{ matrix.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=docker-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.arch }}
+
+      - name: Export image digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+
+      - name: Upload image digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: digest-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  manifest:
+    needs: images
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download image digests
+        uses: actions/download-artifact@v8
+        with:
+          path: /tmp/digests
+          pattern: digest-*
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: godsama
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Generate Docker tags
+        id: metadata
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && inputs.tag != '' }}
+            type=raw,value=${{ github.ref_name }},enable=${{ github.event_name == 'push' || inputs.tag == '' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && github.ref_name == 'dev' }}
+            type=sha,prefix=sha-
+
+      - name: Create and push multi-architecture manifest
+        working-directory: /tmp/digests
+        env:
+          DOCKER_METADATA_OUTPUT_JSON: ${{ steps.metadata.outputs.json }}
+        run: |
+          mapfile -t TAGS < <(jq -r '.tags[]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
+          TAG_ARGS=()
+          for tag in "${TAGS[@]}"; do
+            TAG_ARGS+=(--tag "$tag")
+          done
+
+          IMAGES=()
+          for digest in *; do
+            IMAGES+=("${IMAGE_NAME}@sha256:${digest}")
+          done
+
+          docker buildx imagetools create "${TAG_ARGS[@]}" "${IMAGES[@]}"
+          docker buildx imagetools inspect "${TAGS[0]}"
