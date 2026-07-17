@@ -65,6 +65,7 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 		Description        string                      `json:"description"`
 		Price              float64                     `json:"price"`
 		OriginalPrice      *float64                    `json:"original_price,omitempty"`
+		Currency           string                      `json:"currency,omitempty"`
 		ValidityDays       int                         `json:"validity_days"`
 		ValidityUnit       string                      `json:"validity_unit"`
 		Features           string                      `json:"features"`
@@ -83,6 +84,7 @@ func (h *PaymentHandler) GetPlans(c *gin.Context) {
 			PeakStart: gi.PeakStart, PeakEnd: gi.PeakEnd, PeakRateMultiplier: gi.PeakRateMultiplier,
 			RateTimeRules: gi.RateTimeRules,
 			Name:          p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
+			Currency:     p.Currency,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: p.Features,
 			ProductName: p.ProductName, ForSale: p.ForSale, SortOrder: p.SortOrder,
 		})
@@ -127,6 +129,7 @@ func (h *PaymentHandler) GetCheckoutInfo(c *gin.Context) {
 			WeeklyLimitUSD: gi.WeeklyLimitUSD, MonthlyLimitUSD: gi.MonthlyLimitUSD,
 			ModelScopes: gi.ModelScopes,
 			Name:        p.Name, Description: p.Description, Price: p.Price, OriginalPrice: p.OriginalPrice,
+			Currency:     p.Currency,
 			ValidityDays: p.ValidityDays, ValidityUnit: p.ValidityUnit, Features: parseFeatures(p.Features),
 			ProductName: p.ProductName,
 		})
@@ -184,6 +187,7 @@ type checkoutPlan struct {
 	Description        string                      `json:"description"`
 	Price              float64                     `json:"price"`
 	OriginalPrice      *float64                    `json:"original_price,omitempty"`
+	Currency           string                      `json:"currency,omitempty"`
 	ValidityDays       int                         `json:"validity_days"`
 	ValidityUnit       string                      `json:"validity_unit"`
 	Features           []string                    `json:"features"`
