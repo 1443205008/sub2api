@@ -944,6 +944,16 @@ export default {
         saved: 'Overload cooldown settings saved',
         saveFailed: 'Failed to save overload cooldown settings'
       },
+      codexPATRecovery: {
+        title: 'Codex PAT Temporary Recovery',
+        description: 'Periodically restore active Codex PAT accounts that entered temporary-unschedulable state',
+        enabled: 'Enable Automatic Recovery',
+        enabledHint: 'Only active Codex PAT accounts are restored; manual pauses, rate limits, overloads, and permanent errors are unchanged',
+        intervalSeconds: 'Scan Interval (seconds)',
+        intervalSecondsHint: 'Scan every 1-3600 seconds. Changes take effect on the next worker cycle',
+        saved: 'Codex PAT recovery settings saved',
+        saveFailed: 'Failed to save Codex PAT recovery settings'
+      },
       rateLimit429Cooldown: {
         title: '429 Default Cooldown',
         description: 'Configure the default account cooldown when upstream returns 429 without an explicit reset time',

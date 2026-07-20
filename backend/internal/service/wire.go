@@ -95,6 +95,20 @@ func ProvideTokenRefreshService(
 	return svc
 }
 
+// ProvideCodexPATTempUnschedRecoveryService creates and starts the opt-in
+// recovery worker for active Codex PAT accounts.
+func ProvideCodexPATTempUnschedRecoveryService(
+	accountRepo AccountRepository,
+	tempUnschedCache TempUnschedCache,
+	cfg *config.Config,
+	runtimeBlocker AccountRuntimeBlocker,
+	settingService *SettingService,
+) *CodexPATTempUnschedRecoveryService {
+	svc := NewCodexPATTempUnschedRecoveryService(accountRepo, tempUnschedCache, runtimeBlocker, cfg, settingService)
+	svc.Start()
+	return svc
+}
+
 // ProvideClaudeTokenProvider creates ClaudeTokenProvider with OAuthRefreshAPI injection
 func ProvideClaudeTokenProvider(
 	accountRepo AccountRepository,
@@ -737,6 +751,7 @@ var ProviderSet = wire.NewSet(
 	ProvideUpdateService,
 	ProvideTokenRefreshService,
 	wire.Bind(new(GrokOAuthReconciler), new(*TokenRefreshService)),
+	ProvideCodexPATTempUnschedRecoveryService,
 	ProvideAccountExpiryService,
 	ProvideProxyExpiryService,
 	ProvideSubscriptionExpiryService,

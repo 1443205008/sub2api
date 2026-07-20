@@ -1205,6 +1205,30 @@ export async function updateRateLimit429CooldownSettings(
   return data;
 }
 
+// ==================== Codex PAT Temporary Recovery Settings ====================
+
+export interface CodexPATTempUnschedRecoverySettings {
+  enabled: boolean;
+  interval_seconds: number;
+}
+
+export async function getCodexPATTempUnschedRecoverySettings(): Promise<CodexPATTempUnschedRecoverySettings> {
+  const { data } = await apiClient.get<CodexPATTempUnschedRecoverySettings>(
+    "/admin/settings/codex-pat-temp-unsched-recovery",
+  );
+  return data;
+}
+
+export async function updateCodexPATTempUnschedRecoverySettings(
+  settings: CodexPATTempUnschedRecoverySettings,
+): Promise<CodexPATTempUnschedRecoverySettings> {
+  const { data } = await apiClient.put<CodexPATTempUnschedRecoverySettings>(
+    "/admin/settings/codex-pat-temp-unsched-recovery",
+    settings,
+  );
+  return data;
+}
+
 // ==================== Stream Timeout Settings ====================
 
 /**
@@ -1432,6 +1456,8 @@ export const settingsAPI = {
   updateOverloadCooldownSettings,
   getRateLimit429CooldownSettings,
   updateRateLimit429CooldownSettings,
+  getCodexPATTempUnschedRecoverySettings,
+  updateCodexPATTempUnschedRecoverySettings,
   getStreamTimeoutSettings,
   updateStreamTimeoutSettings,
   getRectifierSettings,

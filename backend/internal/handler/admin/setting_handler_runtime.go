@@ -154,6 +154,51 @@ func (h *SettingHandler) UpdateRateLimit429CooldownSettings(c *gin.Context) {
 	})
 }
 
+// GetCodexPATTempUnschedRecoverySettings gets the recovery worker settings.
+// GET /api/v1/admin/settings/codex-pat-temp-unsched-recovery
+func (h *SettingHandler) GetCodexPATTempUnschedRecoverySettings(c *gin.Context) {
+	settings, err := h.settingService.GetCodexPATTempUnschedRecoverySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"enabled":          settings.Enabled,
+		"interval_seconds": settings.IntervalSeconds,
+	})
+}
+
+type UpdateCodexPATTempUnschedRecoverySettingsRequest struct {
+	Enabled         bool `json:"enabled"`
+	IntervalSeconds int  `json:"interval_seconds"`
+}
+
+// UpdateCodexPATTempUnschedRecoverySettings updates the recovery worker settings.
+// PUT /api/v1/admin/settings/codex-pat-temp-unsched-recovery
+func (h *SettingHandler) UpdateCodexPATTempUnschedRecoverySettings(c *gin.Context) {
+	var req UpdateCodexPATTempUnschedRecoverySettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.settingService.SetCodexPATTempUnschedRecoverySettings(c.Request.Context(), &service.CodexPATTempUnschedRecoverySettings{
+		Enabled:         req.Enabled,
+		IntervalSeconds: req.IntervalSeconds,
+	}); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	updated, err := h.settingService.GetCodexPATTempUnschedRecoverySettings(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{
+		"enabled":          updated.Enabled,
+		"interval_seconds": updated.IntervalSeconds,
+	})
+}
+
 // GetStreamTimeoutSettings 获取流超时处理配置
 // GET /api/v1/admin/settings/stream-timeout
 func (h *SettingHandler) GetStreamTimeoutSettings(c *gin.Context) {

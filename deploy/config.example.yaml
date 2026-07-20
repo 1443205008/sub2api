@@ -1063,6 +1063,13 @@ rate_limit:
   # 上游返回 529（过载）时的冷却时间（分钟）
   overload_cooldown_minutes: 10
 
+  # Periodically restore active Codex PAT accounts from temporary-unschedulable state.
+  # 启用后，定期恢复处于临时不可调度状态的启用 Codex PAT 账号。
+  codex_pat_temp_unsched_recovery_enabled: false
+  # Scan interval in seconds. Effective only when recovery is enabled.
+  # 巡查间隔（秒），仅在启用恢复功能时生效。
+  codex_pat_temp_unsched_recovery_interval_seconds: 30
+
 # =============================================================================
 # Pricing Data Source (Optional)
 # 定价数据源（可选）

@@ -502,6 +502,13 @@ type RateLimit429CooldownSettings struct {
 	CooldownSeconds int `json:"cooldown_seconds"`
 }
 
+// CodexPATTempUnschedRecoverySettings controls periodic recovery for active
+// Codex PAT accounts that are temporarily unschedulable.
+type CodexPATTempUnschedRecoverySettings struct {
+	Enabled         bool `json:"enabled"`
+	IntervalSeconds int  `json:"interval_seconds"`
+}
+
 // DefaultOverloadCooldownSettings 返回默认的过载冷却配置（启用，10分钟）
 func DefaultOverloadCooldownSettings() *OverloadCooldownSettings {
 	return &OverloadCooldownSettings{
@@ -515,6 +522,16 @@ func DefaultRateLimit429CooldownSettings() *RateLimit429CooldownSettings {
 	return &RateLimit429CooldownSettings{
 		Enabled:         true,
 		CooldownSeconds: 5,
+	}
+}
+
+func defaultCodexPATTempUnschedRecoverySettings(cfgEnabled bool, cfgIntervalSeconds int) *CodexPATTempUnschedRecoverySettings {
+	if cfgIntervalSeconds < 1 {
+		cfgIntervalSeconds = 30
+	}
+	return &CodexPATTempUnschedRecoverySettings{
+		Enabled:         cfgEnabled,
+		IntervalSeconds: cfgIntervalSeconds,
 	}
 }
 

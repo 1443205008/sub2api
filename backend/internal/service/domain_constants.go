@@ -392,6 +392,10 @@ const (
 	// SettingKeyRateLimit429CooldownSettings stores JSON config for 429 fallback cooldown handling.
 	SettingKeyRateLimit429CooldownSettings = "rate_limit_429_cooldown_settings"
 
+	// SettingKeyCodexPATTempUnschedRecoverySettings stores the opt-in recovery
+	// configuration for active Codex PAT accounts in temporary-unschedulable state.
+	SettingKeyCodexPATTempUnschedRecoverySettings = "codex_pat_temp_unsched_recovery_settings"
+
 	// =========================
 	// Stream Timeout Handling
 	// =========================

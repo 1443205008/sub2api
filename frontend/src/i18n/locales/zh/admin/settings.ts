@@ -938,6 +938,16 @@ export default {
         saved: '过载冷却设置保存成功',
         saveFailed: '保存过载冷却设置失败'
       },
+      codexPATRecovery: {
+        title: 'Codex PAT 临时状态恢复',
+        description: '定期恢复进入临时不可调度状态的启用 Codex PAT 账号',
+        enabled: '启用自动恢复',
+        enabledHint: '仅恢复启用的 Codex PAT 账号；手动暂停、429 限流、529 过载和永久错误不会改变',
+        intervalSeconds: '巡查间隔（秒）',
+        intervalSecondsHint: '每 1-3600 秒巡查一次，保存后在下一次巡查周期生效',
+        saved: 'Codex PAT 恢复设置保存成功',
+        saveFailed: '保存 Codex PAT 恢复设置失败'
+      },
       rateLimit429Cooldown: {
         title: '429 默认回避',
         description: '配置上游返回 429 且没有明确重置时间时的默认账号回避策略',

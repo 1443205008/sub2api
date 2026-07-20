@@ -1416,8 +1416,10 @@ type DefaultConfig struct {
 }
 
 type RateLimitConfig struct {
-	OverloadCooldownMinutes int `mapstructure:"overload_cooldown_minutes"`  // 529过载冷却时间(分钟)
-	OAuth401CooldownMinutes int `mapstructure:"oauth_401_cooldown_minutes"` // OAuth 401临时不可调度冷却(分钟)
+	OverloadCooldownMinutes                    int  `mapstructure:"overload_cooldown_minutes"`                        // 529过载冷却时间(分钟)
+	OAuth401CooldownMinutes                    int  `mapstructure:"oauth_401_cooldown_minutes"`                       // OAuth 401临时不可调度冷却(分钟)
+	CodexPATTempUnschedRecoveryEnabled         bool `mapstructure:"codex_pat_temp_unsched_recovery_enabled"`          // 定期恢复 Codex PAT 临时不可调度账号
+	CodexPATTempUnschedRecoveryIntervalSeconds int  `mapstructure:"codex_pat_temp_unsched_recovery_interval_seconds"` // 巡查间隔（秒）
 }
 
 // APIKeyAuthCacheConfig API Key 认证缓存配置
@@ -2214,6 +2216,10 @@ func setDefaults() {
 	viper.SetDefault("token_refresh.attempt_timeout_seconds", 15)
 	viper.SetDefault("token_refresh.cycle_timeout_seconds", 240)
 
+	// RateLimit
+	viper.SetDefault("rate_limit.codex_pat_temp_unsched_recovery_enabled", false)
+	viper.SetDefault("rate_limit.codex_pat_temp_unsched_recovery_interval_seconds", 30)
+
 	// Gemini OAuth - configure via environment variables or config file
 	// GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET
 	// Default: uses Gemini CLI public credentials (set via environment)
@@ -2229,6 +2235,9 @@ func setDefaults() {
 }
 
 func (c *Config) Validate() error {
+	if c.RateLimit.CodexPATTempUnschedRecoveryEnabled && c.RateLimit.CodexPATTempUnschedRecoveryIntervalSeconds < 1 {
+		return fmt.Errorf("rate_limit.codex_pat_temp_unsched_recovery_interval_seconds must be positive when recovery is enabled")
+	}
 	if c.Server.ReadHeaderTimeout < 1 || c.Server.ReadHeaderTimeout > 60 {
 		return fmt.Errorf("server.read_header_timeout must be between 1 and 60 seconds")
 	}

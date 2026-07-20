@@ -87,6 +87,7 @@ func provideCleanup(
 	authCacheInvalidationWorker *service.AuthCacheInvalidationWorker,
 	schedulerSnapshot *service.SchedulerSnapshotService,
 	tokenRefresh *service.TokenRefreshService,
+	codexPATTempUnschedRecovery *service.CodexPATTempUnschedRecoveryService,
 	accountExpiry *service.AccountExpiryService,
 	proxyExpiry *service.ProxyExpiryService,
 	subscriptionExpiry *service.SubscriptionExpiryService,
@@ -229,6 +230,10 @@ func provideCleanup(
 			}},
 			{"TokenRefreshService", func() error {
 				tokenRefresh.Stop()
+				return nil
+			}},
+			{"CodexPATTempUnschedRecoveryService", func() error {
+				codexPATTempUnschedRecovery.Stop()
 				return nil
 			}},
 			{"AccountExpiryService", func() error {

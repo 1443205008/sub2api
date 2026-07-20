@@ -625,6 +625,62 @@ func (s *SettingService) SetRateLimit429CooldownSettings(ctx context.Context, se
 	return s.settingRepo.Set(ctx, SettingKeyRateLimit429CooldownSettings, string(data))
 }
 
+// GetCodexPATTempUnschedRecoverySettings gets the runtime recovery settings
+// for active Codex PAT accounts. File configuration remains the initial default
+// until an administrator saves a value through the management API.
+func (s *SettingService) GetCodexPATTempUnschedRecoverySettings(ctx context.Context) (*CodexPATTempUnschedRecoverySettings, error) {
+	defaultSettings := s.defaultCodexPATTempUnschedRecoverySettings()
+	value, err := s.settingRepo.GetValue(ctx, SettingKeyCodexPATTempUnschedRecoverySettings)
+	if err != nil {
+		if errors.Is(err, ErrSettingNotFound) {
+			return defaultSettings, nil
+		}
+		return nil, fmt.Errorf("get Codex PAT temporary recovery settings: %w", err)
+	}
+	if value == "" {
+		return defaultSettings, nil
+	}
+
+	var settings CodexPATTempUnschedRecoverySettings
+	if err := json.Unmarshal([]byte(value), &settings); err != nil {
+		return defaultSettings, nil
+	}
+	if settings.IntervalSeconds < 1 {
+		settings.IntervalSeconds = 1
+	}
+	if settings.IntervalSeconds > 3600 {
+		settings.IntervalSeconds = 3600
+	}
+	return &settings, nil
+}
+
+func (s *SettingService) SetCodexPATTempUnschedRecoverySettings(ctx context.Context, settings *CodexPATTempUnschedRecoverySettings) error {
+	if settings == nil {
+		return fmt.Errorf("settings cannot be nil")
+	}
+	if settings.IntervalSeconds < 1 || settings.IntervalSeconds > 3600 {
+		if settings.Enabled {
+			return fmt.Errorf("interval_seconds must be between 1-3600")
+		}
+		settings.IntervalSeconds = 30
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		return fmt.Errorf("marshal Codex PAT temporary recovery settings: %w", err)
+	}
+	return s.settingRepo.Set(ctx, SettingKeyCodexPATTempUnschedRecoverySettings, string(data))
+}
+
+func (s *SettingService) defaultCodexPATTempUnschedRecoverySettings() *CodexPATTempUnschedRecoverySettings {
+	if s == nil || s.cfg == nil {
+		return defaultCodexPATTempUnschedRecoverySettings(false, 30)
+	}
+	return defaultCodexPATTempUnschedRecoverySettings(
+		s.cfg.RateLimit.CodexPATTempUnschedRecoveryEnabled,
+		s.cfg.RateLimit.CodexPATTempUnschedRecoveryIntervalSeconds,
+	)
+}
+
 // GetStreamTimeoutSettings 获取流超时处理配置
 func (s *SettingService) GetStreamTimeoutSettings(ctx context.Context) (*StreamTimeoutSettings, error) {
 	value, err := s.settingRepo.GetValue(ctx, SettingKeyStreamTimeoutSettings)

@@ -304,6 +304,85 @@
             </div>
           </div>
 
+          <!-- Codex PAT Temporary Recovery Settings -->
+          <div class="card">
+            <div
+              class="border-b border-gray-100 px-6 py-4 dark:border-dark-700"
+            >
+              <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ t("admin.settings.codexPATRecovery.title") }}
+              </h2>
+              <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                {{ t("admin.settings.codexPATRecovery.description") }}
+              </p>
+            </div>
+            <div class="space-y-5 p-6">
+              <div
+                v-if="codexPATRecoveryLoading"
+                class="flex items-center gap-2 text-gray-500"
+              >
+                <div
+                  class="h-4 w-4 animate-spin rounded-full border-b-2 border-primary-600"
+                ></div>
+                {{ t("common.loading") }}
+              </div>
+
+              <template v-else>
+                <div class="flex items-center justify-between gap-4">
+                  <div>
+                    <label class="font-medium text-gray-900 dark:text-white">
+                      {{ t("admin.settings.codexPATRecovery.enabled") }}
+                    </label>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.codexPATRecovery.enabledHint") }}
+                    </p>
+                  </div>
+                  <Toggle v-model="codexPATRecoveryForm.enabled" />
+                </div>
+
+                <div
+                  v-if="codexPATRecoveryForm.enabled"
+                  class="space-y-4 border-t border-gray-100 pt-4 dark:border-dark-700"
+                >
+                  <div>
+                    <label
+                      class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      {{ t("admin.settings.codexPATRecovery.intervalSeconds") }}
+                    </label>
+                    <input
+                      v-model.number="codexPATRecoveryForm.interval_seconds"
+                      type="number"
+                      min="1"
+                      max="3600"
+                      class="input w-32"
+                    />
+                    <p class="mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+                      {{ t("admin.settings.codexPATRecovery.intervalSecondsHint") }}
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  class="flex justify-end border-t border-gray-100 pt-4 dark:border-dark-700"
+                >
+                  <button
+                    type="button"
+                    @click="saveCodexPATRecoverySettings"
+                    :disabled="codexPATRecoverySaving"
+                    class="btn btn-primary btn-sm"
+                  >
+                    {{
+                      codexPATRecoverySaving
+                        ? t("common.saving")
+                        : t("common.save")
+                    }}
+                  </button>
+                </div>
+              </template>
+            </div>
+          </div>
+
           <!-- Rate Limit Cooldown (429) Settings -->
           <div class="card">
             <div
@@ -7848,6 +7927,14 @@ const overloadCooldownForm = reactive({
   cooldown_minutes: 10,
 });
 
+// Codex PAT 临时不可调度恢复巡查状态
+const codexPATRecoveryLoading = ref(true);
+const codexPATRecoverySaving = ref(false);
+const codexPATRecoveryForm = reactive({
+  enabled: false,
+  interval_seconds: 30,
+});
+
 // Rate Limit Cooldown (429) 状态
 const rateLimit429CooldownLoading = ref(true);
 const rateLimit429CooldownSaving = ref(false);
@@ -10367,6 +10454,41 @@ async function saveOverloadCooldownSettings() {
   }
 }
 
+async function loadCodexPATRecoverySettings() {
+  codexPATRecoveryLoading.value = true;
+  try {
+    Object.assign(
+      codexPATRecoveryForm,
+      await adminAPI.settings.getCodexPATTempUnschedRecoverySettings(),
+    );
+  } catch (_error: unknown) {
+    // Keep defaults if the optional runtime setting cannot be loaded.
+  } finally {
+    codexPATRecoveryLoading.value = false;
+  }
+}
+
+async function saveCodexPATRecoverySettings() {
+  codexPATRecoverySaving.value = true;
+  try {
+    const updated = await adminAPI.settings.updateCodexPATTempUnschedRecoverySettings({
+      enabled: codexPATRecoveryForm.enabled,
+      interval_seconds: codexPATRecoveryForm.interval_seconds,
+    });
+    Object.assign(codexPATRecoveryForm, updated);
+    appStore.showSuccess(t("admin.settings.codexPATRecovery.saved"));
+  } catch (error: unknown) {
+    appStore.showError(
+      extractApiErrorMessage(
+        error,
+        t("admin.settings.codexPATRecovery.saveFailed"),
+      ),
+    );
+  } finally {
+    codexPATRecoverySaving.value = false;
+  }
+}
+
 // Rate Limit Cooldown (429) 方法
 async function loadRateLimit429CooldownSettings() {
   rateLimit429CooldownLoading.value = true;
@@ -11031,6 +11153,7 @@ onMounted(() => {
   loadAdminApiKey();
   loadUpstreamBillingProbeSettings();
   loadOverloadCooldownSettings();
+  loadCodexPATRecoverySettings();
   loadRateLimit429CooldownSettings();
   loadStreamTimeoutSettings();
   loadRectifierSettings();
