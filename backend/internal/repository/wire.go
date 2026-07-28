@@ -141,6 +141,7 @@ var ProviderSet = wire.NewSet(
 	// Backup infrastructure
 	NewPgDumper,
 	NewS3BackupStoreFactory,
+	NewWebDAVBackupStoreFactory,
 
 	// Image storage (async image task result offload)
 	ProvideImageStorageFactory,

@@ -1,7 +1,79 @@
 <template>
     <div class="space-y-6">
-      <!-- S3 Storage Config -->
+      <!-- 存储类型选择器 -->
       <div class="card p-6">
+        <h3 class="mb-3 text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.backup.storageType.title') }}</h3>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="activeStorageType === 's3' ? 'btn-primary' : 'btn-secondary'"
+            :disabled="switchingStorageType"
+            @click="switchStorageType('s3')"
+          >S3 {{ t('admin.backup.storageType.compatible') }}</button>
+          <button
+            type="button"
+            class="btn btn-sm"
+            :class="activeStorageType === 'webdav' ? 'btn-primary' : 'btn-secondary'"
+            :disabled="switchingStorageType"
+            @click="switchStorageType('webdav')"
+          >WebDAV</button>
+        </div>
+      </div>
+
+      <!-- WebDAV Storage Config -->
+      <div v-if="activeStorageType === 'webdav'" class="card p-6">
+        <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('admin.backup.webdav.title') }}</h3>
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ t('admin.backup.webdav.description') }}</p>
+          </div>
+          <button type="button" class="text-xs text-primary-600 underline hover:text-primary-700 dark:text-primary-400" @click="showWebDAVGuide = !showWebDAVGuide">
+            {{ t('admin.backup.webdav.commonAddresses') }}
+          </button>
+        </div>
+
+        <!-- 常见 WebDAV 地址参考 -->
+        <div v-if="showWebDAVGuide" class="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-dark-600 dark:bg-dark-700">
+          <p class="mb-2 text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.commonAddressesTitle') }}</p>
+          <ul class="space-y-1 text-xs text-gray-600 dark:text-gray-400">
+            <li><span class="font-medium">坚果云：</span><code>https://dav.jianguoyun.com/dav/</code></li>
+            <li><span class="font-medium">Nextcloud：</span><code>https://your-server/remote.php/dav/files/username/</code></li>
+            <li><span class="font-medium">群晖 NAS：</span><code>https://your-nas:5006/webdav/</code></li>
+            <li><span class="font-medium">Box：</span><code>https://dav.box.com/dav/</code></li>
+          </ul>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.url') }}</label>
+            <input v-model="webdavForm.url" class="input w-full" placeholder="https://dav.jianguoyun.com/dav/" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.username') }}</label>
+            <input v-model="webdavForm.username" class="input w-full" autocomplete="off" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.password') }}</label>
+            <input v-model="webdavForm.password" type="password" class="input w-full" :placeholder="webdavSecretConfigured ? t('admin.backup.s3.secretConfigured') : ''" autocomplete="new-password" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-400">{{ t('admin.backup.webdav.prefix') }}</label>
+            <input v-model="webdavForm.prefix" class="input w-full" placeholder="backups" />
+          </div>
+        </div>
+        <div class="mt-4 flex flex-wrap gap-2">
+          <button type="button" class="btn btn-secondary btn-sm" :disabled="testingWebDAV" @click="testWebDAV">
+            {{ testingWebDAV ? t('common.loading') : t('admin.backup.s3.testConnection') }}
+          </button>
+          <button type="button" class="btn btn-primary btn-sm" :disabled="savingWebDAV" @click="saveWebDAVConfig">
+            {{ savingWebDAV ? t('common.loading') : t('common.save') }}
+          </button>
+        </div>
+      </div>
+
+      <!-- S3 Storage Config -->
+      <div v-if="activeStorageType === 's3'" class="card p-6">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 class="text-base font-semibold text-gray-900 dark:text-white">
@@ -364,6 +436,8 @@ import type {
   BackupScheduleConfig,
   BackupRecord,
   ImageStorageConfig,
+  BackupStorageType,
+  BackupWebDAVConfig,
 } from '@/api/admin/backup'
 import { useStepUp, isStepUpBlocked, isStepUpCancelled, stepUpBlockReason } from '@/composables/useStepUp'
 import TotpStepUpDialog from '@/components/auth/TotpStepUpDialog.vue'
@@ -396,6 +470,83 @@ const s3Form = ref<BackupS3Config>({
 const s3SecretConfigured = ref(false)
 const savingS3 = ref(false)
 const testingS3 = ref(false)
+
+// Storage type (S3 / WebDAV)
+const activeStorageType = ref<BackupStorageType>('s3')
+const switchingStorageType = ref(false)
+
+async function switchStorageType(t: BackupStorageType) {
+  if (t === activeStorageType.value) return
+  switchingStorageType.value = true
+  try {
+    await adminAPI.backup.updateStorageType(t)
+    activeStorageType.value = t
+  } catch (error) {
+    appStore.showError((error as { message?: string })?.message || 'Failed to update storage type')
+  } finally {
+    switchingStorageType.value = false
+  }
+}
+
+// WebDAV config
+const webdavForm = ref<BackupWebDAVConfig>({
+  url: '',
+  username: '',
+  password: '',
+  prefix: 'backups',
+})
+const webdavSecretConfigured = ref(false)
+const savingWebDAV = ref(false)
+const testingWebDAV = ref(false)
+const showWebDAVGuide = ref(false)
+
+async function loadWebDAVConfig() {
+  try {
+    const cfg = await adminAPI.backup.getWebDAVConfig()
+    webdavForm.value = {
+      url: cfg.url || '',
+      username: cfg.username || '',
+      password: '',
+      prefix: cfg.prefix || 'backups',
+    }
+    webdavSecretConfigured.value = Boolean(cfg.username && cfg.url)
+  } catch (error) {
+    appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
+  }
+}
+
+async function saveWebDAVConfig() {
+  savingWebDAV.value = true
+  try {
+    await backupStepUp.run(() => adminAPI.backup.updateWebDAVConfig(webdavForm.value))
+    appStore.showSuccess(t('common.saved'))
+    await loadWebDAVConfig()
+  } catch (error) {
+    if (isStepUpCancelled(error)) {
+      savingWebDAV.value = false
+      return
+    }
+    appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
+  } finally {
+    savingWebDAV.value = false
+  }
+}
+
+async function testWebDAV() {
+  testingWebDAV.value = true
+  try {
+    const result = await adminAPI.backup.testWebDAVConnection(webdavForm.value)
+    if (result.ok) {
+      appStore.showSuccess(t('admin.backup.s3.testSuccess'))
+    } else {
+      appStore.showError(result.message || t('admin.backup.s3.testFailed'))
+    }
+  } catch (error) {
+    appStore.showError((error as { message?: string })?.message || t('errors.networkError'))
+  } finally {
+    testingWebDAV.value = false
+  }
+}
 
 // Async image object storage. Shares the S3 client with backups, so the default is
 // to reuse the credentials configured above and only differ by prefix.
@@ -790,7 +941,12 @@ function formatDate(value?: string): string {
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
-  await Promise.all([loadS3Config(), loadImageStorageConfig(), loadSchedule(), loadBackups()])
+  // 先加载存储类型，再并行加载其他配置
+  try {
+    const { type } = await adminAPI.backup.getStorageType()
+    activeStorageType.value = type
+  } catch { /* 默认 s3 */ }
+  await Promise.all([loadS3Config(), loadWebDAVConfig(), loadImageStorageConfig(), loadSchedule(), loadBackups()])
 
   // 如果有正在 running 的备份，恢复轮询
   const runningBackup = backups.value.find(r => r.status === 'running')

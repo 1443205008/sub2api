@@ -589,11 +589,20 @@ func registerDataManagementRoutes(admin *gin.RouterGroup, h *handler.Handlers, s
 func registerBackupRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAuth middleware.StepUpAuthMiddleware) {
 	backup := admin.Group("/backups")
 	{
+		// 存储类型选择（S3 / WebDAV）
+		backup.GET("/storage-type", h.Admin.Backup.GetStorageType)
+		backup.PUT("/storage-type", gin.HandlerFunc(stepUpAuth), h.Admin.Backup.UpdateStorageType)
+
 		// S3 存储配置
 		backup.GET("/s3-config", h.Admin.Backup.GetS3Config)
 		// 修改 S3 目标可将数据库备份外泄——要求 step-up 2FA
 		backup.PUT("/s3-config", gin.HandlerFunc(stepUpAuth), h.Admin.Backup.UpdateS3Config)
 		backup.POST("/s3-config/test", h.Admin.Backup.TestS3Connection)
+
+		// WebDAV 存储配置
+		backup.GET("/webdav-config", h.Admin.Backup.GetWebDAVConfig)
+		backup.PUT("/webdav-config", gin.HandlerFunc(stepUpAuth), h.Admin.Backup.UpdateWebDAVConfig)
+		backup.POST("/webdav-config/test", h.Admin.Backup.TestWebDAVConnection)
 
 		// 异步生图对象存储配置（与备份共用 S3 客户端，可直接复用备份凭证）
 		backup.GET("/image-storage", h.Admin.Backup.GetImageStorageConfig)
@@ -612,6 +621,8 @@ func registerBackupRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpAut
 		backup.DELETE("/:id", h.Admin.Backup.DeleteBackup)
 		// 备份下载链接可直接取走整库数据——要求 step-up 2FA
 		backup.GET("/:id/download-url", gin.HandlerFunc(stepUpAuth), h.Admin.Backup.GetDownloadURL)
+		// WebDAV 代理下载（PresignURL 为空时前端使用此接口）
+		backup.GET("/:id/download", gin.HandlerFunc(stepUpAuth), h.Admin.Backup.ProxyDownload)
 
 		// 恢复操作：整库覆盖可回滚安全设置（含 step-up 开关本身）——要求 step-up 2FA
 		backup.POST("/:id/restore", gin.HandlerFunc(stepUpAuth), h.Admin.Backup.RestoreBackup)

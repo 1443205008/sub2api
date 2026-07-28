@@ -22,20 +22,32 @@ import (
 )
 
 const (
-	settingKeyBackupS3Config = "backup_s3_config"
-	settingKeyBackupSchedule = "backup_schedule"
-	settingKeyBackupRecords  = "backup_records"
+	settingKeyBackupS3Config     = "backup_s3_config"
+	settingKeyBackupSchedule     = "backup_schedule"
+	settingKeyBackupRecords      = "backup_records"
+	settingKeyBackupStorageType  = "backup_storage_type"
+	settingKeyBackupWebDAVConfig = "backup_webdav_config"
 
 	maxBackupRecords = 100
 )
 
+// BackupStorageType identifies the object storage backend used for backups.
+type BackupStorageType string
+
+const (
+	BackupStorageTypeS3     BackupStorageType = "s3"
+	BackupStorageTypeWebDAV BackupStorageType = "webdav"
+)
+
 var (
-	ErrBackupS3NotConfigured = infraerrors.BadRequest("BACKUP_S3_NOT_CONFIGURED", "backup S3 storage is not configured")
-	ErrBackupNotFound        = infraerrors.NotFound("BACKUP_NOT_FOUND", "backup record not found")
-	ErrBackupInProgress      = infraerrors.Conflict("BACKUP_IN_PROGRESS", "a backup is already in progress")
-	ErrRestoreInProgress     = infraerrors.Conflict("RESTORE_IN_PROGRESS", "a restore is already in progress")
-	ErrBackupRecordsCorrupt  = infraerrors.InternalServer("BACKUP_RECORDS_CORRUPT", "backup records data is corrupted")
-	ErrBackupS3ConfigCorrupt = infraerrors.InternalServer("BACKUP_S3_CONFIG_CORRUPT", "backup S3 config data is corrupted")
+	ErrBackupS3NotConfigured      = infraerrors.BadRequest("BACKUP_S3_NOT_CONFIGURED", "backup S3 storage is not configured")
+	ErrBackupWebDAVNotConfigured  = infraerrors.BadRequest("BACKUP_WEBDAV_NOT_CONFIGURED", "backup WebDAV storage is not configured")
+	ErrBackupNotFound             = infraerrors.NotFound("BACKUP_NOT_FOUND", "backup record not found")
+	ErrBackupInProgress           = infraerrors.Conflict("BACKUP_IN_PROGRESS", "a backup is already in progress")
+	ErrRestoreInProgress          = infraerrors.Conflict("RESTORE_IN_PROGRESS", "a restore is already in progress")
+	ErrBackupRecordsCorrupt       = infraerrors.InternalServer("BACKUP_RECORDS_CORRUPT", "backup records data is corrupted")
+	ErrBackupS3ConfigCorrupt      = infraerrors.InternalServer("BACKUP_S3_CONFIG_CORRUPT", "backup S3 config data is corrupted")
+	ErrBackupWebDAVConfigCorrupt  = infraerrors.InternalServer("BACKUP_WEBDAV_CONFIG_CORRUPT", "backup WebDAV config data is corrupted")
 
 	// ErrSecretEncryptionKeyNotConfigured is returned when an S3 SecretAccessKey
 	// would be encrypted with an auto-generated (ephemeral) key. That key is
@@ -70,7 +82,23 @@ type BackupObjectStore interface {
 // BackupObjectStoreFactory creates an object store from S3 config
 type BackupObjectStoreFactory func(ctx context.Context, cfg *BackupS3Config) (BackupObjectStore, error)
 
+// BackupWebDAVStoreFactory creates a WebDAV object store from config
+type BackupWebDAVStoreFactory func(cfg *BackupWebDAVConfig) BackupObjectStore
+
 // ─── 数据模型 ───
+
+// BackupWebDAVConfig WebDAV 存储配置
+type BackupWebDAVConfig struct {
+	URL      string `json:"url"`               // WebDAV 服务器地址，如 https://dav.jianguoyun.com/dav/
+	Username string `json:"username"`
+	Password string `json:"password,omitempty"` // 存储时加密
+	Prefix   string `json:"prefix"`             // 路径前缀，如 "backups"
+}
+
+// IsConfigured 检查 WebDAV 必要字段是否已配置
+func (c *BackupWebDAVConfig) IsConfigured() bool {
+	return c.URL != "" && c.Username != "" && c.Password != ""
+}
 
 // BackupS3Config S3 兼容存储配置（支持 Cloudflare R2）
 type BackupS3Config struct {
@@ -126,15 +154,18 @@ type BackupService struct {
 	// mode (#4524).
 	encryptionKeyConfigured bool
 	storeFactory            BackupObjectStoreFactory
+	webdavFactory           BackupWebDAVStoreFactory
 	dumper                  DBDumper
 
 	opMu      sync.Mutex // 保护 backingUp/restoring 标志
 	backingUp bool
 	restoring bool
 
-	storeMu sync.Mutex // 保护 store/s3Cfg 缓存
-	store   BackupObjectStore
-	s3Cfg   *BackupS3Config
+	storeMu     sync.Mutex        // 保护 store/s3Cfg/webdavCfg/storageType 缓存
+	store       BackupObjectStore
+	s3Cfg       *BackupS3Config
+	webdavCfg   *BackupWebDAVConfig
+	storageType BackupStorageType // 已缓存的存储类型
 
 	recordsMu sync.Mutex // 保护 records 的 load/save 操作
 
@@ -153,6 +184,7 @@ func NewBackupService(
 	cfg *config.Config,
 	encryptor SecretEncryptor,
 	storeFactory BackupObjectStoreFactory,
+	webdavFactory BackupWebDAVStoreFactory,
 	dumper DBDumper,
 ) *BackupService {
 	bgCtx, bgCancel := context.WithCancel(context.Background())
@@ -162,6 +194,7 @@ func NewBackupService(
 		encryptor:               encryptor,
 		encryptionKeyConfigured: cfg.Totp.EncryptionKeyConfigured,
 		storeFactory:            storeFactory,
+		webdavFactory:           webdavFactory,
 		dumper:                  dumper,
 		bgCtx:                   bgCtx,
 		bgCancel:                bgCancel,
@@ -308,6 +341,7 @@ func (s *BackupService) UpdateS3Config(ctx context.Context, cfg BackupS3Config) 
 	s.storeMu.Lock()
 	s.store = nil
 	s.s3Cfg = nil
+	s.webdavCfg = nil
 	s.storeMu.Unlock()
 
 	cfg.SecretAccessKey = ""
@@ -331,6 +365,93 @@ func (s *BackupService) TestS3Connection(ctx context.Context, cfg BackupS3Config
 	if err != nil {
 		return err
 	}
+	return store.HeadBucket(ctx)
+}
+
+// ─── WebDAV 配置管理 ───
+
+func (s *BackupService) GetStorageType(ctx context.Context) (BackupStorageType, error) {
+	t, err := s.loadStorageType(ctx)
+	if err != nil {
+		return "", err
+	}
+	return t, nil
+}
+
+func (s *BackupService) UpdateStorageType(ctx context.Context, t BackupStorageType) error {
+	if t != BackupStorageTypeS3 && t != BackupStorageTypeWebDAV {
+		return infraerrors.BadRequest("INVALID_STORAGE_TYPE", "storage type must be 's3' or 'webdav'")
+	}
+	if err := s.settingRepo.Set(ctx, settingKeyBackupStorageType, string(t)); err != nil {
+		return fmt.Errorf("save storage type: %w", err)
+	}
+	// 清除已缓存的 store，使下次 getOrCreateStore 重新初始化
+	s.storeMu.Lock()
+	s.store = nil
+	s.s3Cfg = nil
+	s.webdavCfg = nil
+	s.storeMu.Unlock()
+	return nil
+}
+
+func (s *BackupService) GetWebDAVConfig(ctx context.Context) (*BackupWebDAVConfig, error) {
+	cfg, err := s.loadWebDAVConfig(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		return &BackupWebDAVConfig{}, nil
+	}
+	// 脱敏返回
+	cfg.Password = ""
+	return cfg, nil
+}
+
+func (s *BackupService) UpdateWebDAVConfig(ctx context.Context, cfg BackupWebDAVConfig) (*BackupWebDAVConfig, error) {
+	if cfg.Password == "" {
+		old, _ := s.loadWebDAVConfig(ctx)
+		if old != nil {
+			cfg.Password = old.Password
+		}
+	} else {
+		if !s.encryptionKeyConfigured {
+			return nil, ErrSecretEncryptionKeyNotConfigured
+		}
+		encrypted, err := s.encryptor.Encrypt(cfg.Password)
+		if err != nil {
+			return nil, fmt.Errorf("encrypt password: %w", err)
+		}
+		cfg.Password = encrypted
+	}
+
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("marshal webdav config: %w", err)
+	}
+	if err := s.settingRepo.Set(ctx, settingKeyBackupWebDAVConfig, string(data)); err != nil {
+		return nil, fmt.Errorf("save webdav config: %w", err)
+	}
+
+	s.storeMu.Lock()
+	s.store = nil
+	s.webdavCfg = nil
+	s.storeMu.Unlock()
+
+	cfg.Password = ""
+	return &cfg, nil
+}
+
+func (s *BackupService) TestWebDAVConnection(ctx context.Context, cfg BackupWebDAVConfig) error {
+	if cfg.Password == "" {
+		old, _ := s.loadWebDAVConfig(ctx)
+		if old != nil {
+			cfg.Password = old.Password
+		}
+	}
+	if cfg.URL == "" || cfg.Username == "" || cfg.Password == "" {
+		return fmt.Errorf("incomplete WebDAV config: url, username, password are required")
+	}
+	store := s.webdavFactory(&cfg)
 	return store.HeadBucket(ctx)
 }
 
@@ -472,15 +593,7 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 		s.opMu.Unlock()
 	}()
 
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if s3Cfg == nil || !s3Cfg.IsConfigured() {
-		return nil, ErrBackupS3NotConfigured
-	}
-
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	objectStore, prefix, err := s.getOrCreateStore(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("init object store: %w", err)
 	}
@@ -488,7 +601,7 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 	now := time.Now()
 	backupID := uuid.New().String()[:8]
 	fileName := fmt.Sprintf("%s_%s.sql.gz", s.dbCfg.DBName, now.Format("20060102_150405"))
-	s3Key := s.buildS3Key(s3Cfg, fileName)
+	s3Key := buildObjectKey(prefix, fileName)
 
 	var expiresAt string
 	if expireDays > 0 {
@@ -506,7 +619,7 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 		ExpiresAt:   expiresAt,
 	}
 
-	// 流式执行: pg_dump -> gzip -> S3 upload
+	// 流式执行: pg_dump -> gzip -> 对象存储上传
 	dumpReader, err := s.dumper.Dump(ctx)
 	if err != nil {
 		record.Status = "failed"
@@ -594,16 +707,8 @@ func (s *BackupService) StartBackup(ctx context.Context, triggeredBy string, exp
 		}
 	}()
 
-	// 在返回前加载 S3 配置和创建 store，避免 goroutine 中配置被修改
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if s3Cfg == nil || !s3Cfg.IsConfigured() {
-		return nil, ErrBackupS3NotConfigured
-	}
-
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	// 在返回前获取 store，避免 goroutine 中配置被修改
+	objectStore, prefix, err := s.getOrCreateStore(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("init object store: %w", err)
 	}
@@ -611,7 +716,7 @@ func (s *BackupService) StartBackup(ctx context.Context, triggeredBy string, exp
 	now := time.Now()
 	backupID := uuid.New().String()[:8]
 	fileName := fmt.Sprintf("%s_%s.sql.gz", s.dbCfg.DBName, now.Format("20060102_150405"))
-	s3Key := s.buildS3Key(s3Cfg, fileName)
+	s3Key := buildObjectKey(prefix, fileName)
 
 	var expiresAt string
 	if expireDays > 0 {
@@ -761,16 +866,12 @@ func (s *BackupService) RestoreBackup(ctx context.Context, backupID string) erro
 		return infraerrors.BadRequest("BACKUP_NOT_COMPLETED", "can only restore from a completed backup")
 	}
 
-	s3Cfg, err := s.loadS3Config(ctx)
+	objectStore, _, err := s.getOrCreateStore(ctx)
 	if err != nil {
 		return err
 	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
-	if err != nil {
-		return fmt.Errorf("init object store: %w", err)
-	}
 
-	// 从 S3 流式下载
+	// 从对象存储流式下载
 	body, err := objectStore.Download(ctx, record.S3Key)
 	if err != nil {
 		return fmt.Errorf("S3 download failed: %w", err)
@@ -824,11 +925,7 @@ func (s *BackupService) StartRestore(ctx context.Context, backupID string) (*Bac
 		return nil, infraerrors.BadRequest("BACKUP_NOT_COMPLETED", "can only restore from a completed backup")
 	}
 
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil {
-		return nil, err
-	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	objectStore, _, err := s.getOrCreateStore(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("init object store: %w", err)
 	}
@@ -947,21 +1044,19 @@ func (s *BackupService) DeleteBackup(ctx context.Context, backupID string) error
 		return ErrBackupNotFound
 	}
 
-	// 从 S3 删除
+	// 从对象存储删除备份文件
 	if found.S3Key != "" && found.Status == "completed" {
-		s3Cfg, err := s.loadS3Config(ctx)
-		if err == nil && s3Cfg != nil && s3Cfg.IsConfigured() {
-			objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
-			if err == nil {
-				_ = objectStore.Delete(ctx, found.S3Key)
-			}
+		objectStore, _, err := s.getOrCreateStore(ctx)
+		if err == nil {
+			_ = objectStore.Delete(ctx, found.S3Key)
 		}
 	}
 
 	return s.saveRecordsLocked(ctx, remaining)
 }
 
-// GetBackupDownloadURL 获取备份文件预签名下载 URL
+// GetBackupDownloadURL 获取备份文件下载 URL。
+// S3：返回预签名直链；WebDAV：返回后端代理下载路径（/api/admin/backups/:id/download）。
 func (s *BackupService) GetBackupDownloadURL(ctx context.Context, backupID string) (string, error) {
 	record, err := s.GetBackupRecord(ctx, backupID)
 	if err != nil {
@@ -971,11 +1066,7 @@ func (s *BackupService) GetBackupDownloadURL(ctx context.Context, backupID strin
 		return "", infraerrors.BadRequest("BACKUP_NOT_COMPLETED", "backup is not completed")
 	}
 
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil {
-		return "", err
-	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	objectStore, _, err := s.getOrCreateStore(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -984,7 +1075,51 @@ func (s *BackupService) GetBackupDownloadURL(ctx context.Context, backupID strin
 	if err != nil {
 		return "", fmt.Errorf("presign url: %w", err)
 	}
+	// WebDAV 返回空字符串：改用后端代理下载
+	if url == "" {
+		return fmt.Sprintf("/api/admin/backups/%s/download", backupID), nil
+	}
 	return url, nil
+}
+
+// StreamDownload 将备份文件内容（已解压 gzip）写入 w，供后端代理下载使用。
+// 返回原始文件名（不含 .gz），调用方设置 Content-Disposition。
+func (s *BackupService) StreamDownload(ctx context.Context, backupID string, w io.Writer) (fileName string, err error) {
+	record, err := s.GetBackupRecord(ctx, backupID)
+	if err != nil {
+		return "", err
+	}
+	if record.Status != "completed" {
+		return "", infraerrors.BadRequest("BACKUP_NOT_COMPLETED", "backup is not completed")
+	}
+
+	objectStore, _, err := s.getOrCreateStore(ctx)
+	if err != nil {
+		return "", fmt.Errorf("init object store: %w", err)
+	}
+
+	body, err := objectStore.Download(ctx, record.S3Key)
+	if err != nil {
+		return "", fmt.Errorf("download backup: %w", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	gzReader, err := gzip.NewReader(body)
+	if err != nil {
+		return "", fmt.Errorf("gzip reader: %w", err)
+	}
+	defer func() { _ = gzReader.Close() }()
+
+	if _, err := io.Copy(w, gzReader); err != nil {
+		return "", fmt.Errorf("stream backup: %w", err)
+	}
+
+	// 去掉 .gz 后缀返回文件名
+	name := record.FileName
+	if strings.HasSuffix(name, ".gz") {
+		name = name[:len(name)-3]
+	}
+	return name, nil
 }
 
 // ─── 内部方法 ───
@@ -1011,32 +1146,111 @@ func (s *BackupService) loadS3Config(ctx context.Context) (*BackupS3Config, erro
 	return &cfg, nil
 }
 
-func (s *BackupService) getOrCreateStore(ctx context.Context, cfg *BackupS3Config) (BackupObjectStore, error) {
+func (s *BackupService) loadStorageType(ctx context.Context) (BackupStorageType, error) {
+	raw, err := s.settingRepo.GetValue(ctx, settingKeyBackupStorageType)
+	if err != nil || raw == "" {
+		return BackupStorageTypeS3, nil // 默认 S3，向后兼容
+	}
+	t := BackupStorageType(raw)
+	if t != BackupStorageTypeS3 && t != BackupStorageTypeWebDAV {
+		return BackupStorageTypeS3, nil
+	}
+	return t, nil
+}
+
+func (s *BackupService) loadWebDAVConfig(ctx context.Context) (*BackupWebDAVConfig, error) {
+	raw, err := s.settingRepo.GetValue(ctx, settingKeyBackupWebDAVConfig)
+	if err != nil || raw == "" {
+		return nil, nil //nolint:nilnil // no config is a valid state
+	}
+	var cfg BackupWebDAVConfig
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return nil, ErrBackupWebDAVConfigCorrupt
+	}
+	// 解密密码
+	if cfg.Password != "" {
+		decrypted, err := s.encryptor.Decrypt(cfg.Password)
+		if err != nil {
+			logger.LegacyPrintf("service.backup", "[Backup] WebDAV Password 解密失败（可能是旧的未加密数据）: %v", err)
+		} else {
+			cfg.Password = decrypted
+		}
+	}
+	return &cfg, nil
+}
+
+func (s *BackupService) getOrCreateStore(ctx context.Context) (store BackupObjectStore, prefix string, err error) {
 	s.storeMu.Lock()
 	defer s.storeMu.Unlock()
 
-	if s.store != nil && s.s3Cfg != nil {
-		return s.store, nil
-	}
-
-	if cfg == nil {
-		return nil, ErrBackupS3NotConfigured
-	}
-
-	store, err := s.storeFactory(ctx, cfg)
+	storageType, err := s.loadStorageType(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	s.store = store
-	s.s3Cfg = cfg
-	return store, nil
+
+	// 命中缓存：类型一致且 store 已初始化
+	if s.store != nil && s.storageType == storageType {
+		return s.store, s.cachedPrefix(), nil
+	}
+
+	switch storageType {
+	case BackupStorageTypeWebDAV:
+		cfg, err := s.loadWebDAVConfig(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		if cfg == nil || !cfg.IsConfigured() {
+			return nil, "", ErrBackupWebDAVNotConfigured
+		}
+		ws := s.webdavFactory(cfg)
+		s.store = ws
+		s.storageType = BackupStorageTypeWebDAV
+		s.webdavCfg = cfg
+		s.s3Cfg = nil
+		return ws, buildKeyPrefix(cfg.Prefix), nil
+
+	default: // BackupStorageTypeS3
+		cfg, err := s.loadS3Config(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		if cfg == nil || !cfg.IsConfigured() {
+			return nil, "", ErrBackupS3NotConfigured
+		}
+		ss, err := s.storeFactory(ctx, cfg)
+		if err != nil {
+			return nil, "", err
+		}
+		s.store = ss
+		s.storageType = BackupStorageTypeS3
+		s.s3Cfg = cfg
+		s.webdavCfg = nil
+		return ss, buildKeyPrefix(cfg.Prefix), nil
+	}
 }
 
-func (s *BackupService) buildS3Key(cfg *BackupS3Config, fileName string) string {
-	prefix := strings.TrimRight(cfg.Prefix, "/")
-	if prefix == "" {
-		prefix = "backups"
+// cachedPrefix returns the prefix from the currently cached config (must be called under storeMu).
+func (s *BackupService) cachedPrefix() string {
+	if s.storageType == BackupStorageTypeWebDAV && s.webdavCfg != nil {
+		return buildKeyPrefix(s.webdavCfg.Prefix)
 	}
+	if s.s3Cfg != nil {
+		return buildKeyPrefix(s.s3Cfg.Prefix)
+	}
+	return "backups"
+}
+
+// buildKeyPrefix normalises a user-supplied prefix, defaulting to "backups".
+func buildKeyPrefix(prefix string) string {
+	p := strings.TrimRight(prefix, "/")
+	if p == "" {
+		return "backups"
+	}
+	return p
+}
+
+// buildObjectKey builds the full object storage key for a backup file.
+func buildObjectKey(prefix, fileName string) string {
 	return fmt.Sprintf("%s/%s/%s", prefix, time.Now().Format("2006/01/02"), fileName)
 }
 
@@ -1156,13 +1370,9 @@ func (s *BackupService) cleanupOldBackups(ctx context.Context, schedule *BackupS
 }
 
 func (s *BackupService) deleteS3Object(ctx context.Context, key string) error {
-	s3Cfg, err := s.loadS3Config(ctx)
-	if err != nil || s3Cfg == nil {
-		return nil
-	}
-	objectStore, err := s.getOrCreateStore(ctx, s3Cfg)
+	objectStore, _, err := s.getOrCreateStore(ctx)
 	if err != nil {
-		return err
+		return nil // 存储未配置时静默忽略
 	}
 	return objectStore.Delete(ctx, key)
 }

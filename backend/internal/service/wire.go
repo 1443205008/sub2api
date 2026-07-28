@@ -571,9 +571,10 @@ func ProvideBackupService(
 	cfg *config.Config,
 	encryptor SecretEncryptor,
 	storeFactory BackupObjectStoreFactory,
+	webdavFactory BackupWebDAVStoreFactory,
 	dumper DBDumper,
 ) *BackupService {
-	svc := NewBackupService(settingRepo, cfg, encryptor, storeFactory, dumper)
+	svc := NewBackupService(settingRepo, cfg, encryptor, storeFactory, webdavFactory, dumper)
 	svc.Start()
 	return svc
 }

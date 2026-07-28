@@ -1,5 +1,14 @@
 import { apiClient } from '../client'
 
+export type BackupStorageType = 's3' | 'webdav'
+
+export interface BackupWebDAVConfig {
+  url: string
+  username: string
+  password?: string
+  prefix?: string
+}
+
 export interface BackupS3Config {
   endpoint: string
   region: string
@@ -42,6 +51,32 @@ export interface CreateBackupRequest {
 export interface TestS3Response {
   ok: boolean
   message: string
+}
+
+// Storage type
+export async function getStorageType(): Promise<{ type: BackupStorageType }> {
+  const { data } = await apiClient.get<{ type: BackupStorageType }>('/admin/backups/storage-type')
+  return data
+}
+
+export async function updateStorageType(type: BackupStorageType): Promise<void> {
+  await apiClient.put('/admin/backups/storage-type', { type })
+}
+
+// WebDAV Config
+export async function getWebDAVConfig(): Promise<BackupWebDAVConfig> {
+  const { data } = await apiClient.get<BackupWebDAVConfig>('/admin/backups/webdav-config')
+  return data
+}
+
+export async function updateWebDAVConfig(config: BackupWebDAVConfig): Promise<BackupWebDAVConfig> {
+  const { data } = await apiClient.put<BackupWebDAVConfig>('/admin/backups/webdav-config', config)
+  return data
+}
+
+export async function testWebDAVConnection(config: BackupWebDAVConfig): Promise<TestS3Response> {
+  const { data } = await apiClient.post<TestS3Response>('/admin/backups/webdav-config/test', config)
+  return data
 }
 
 // S3 Config
@@ -149,6 +184,11 @@ export async function restoreBackup(id: string, password: string): Promise<Backu
 }
 
 export const backupAPI = {
+  getStorageType,
+  updateStorageType,
+  getWebDAVConfig,
+  updateWebDAVConfig,
+  testWebDAVConnection,
   getS3Config,
   updateS3Config,
   testS3Connection,

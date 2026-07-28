@@ -1,6 +1,9 @@
 package admin
 
 import (
+	"fmt"
+	"net/http"
+
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -204,6 +207,101 @@ func (h *BackupHandler) RestoreBackup(c *gin.Context) {
 		return
 	}
 	response.Accepted(c, record)
+}
+
+// ─── WebDAV 配置 ───
+
+type UpdateStorageTypeRequest struct {
+	Type service.BackupStorageType `json:"type" binding:"required"`
+}
+
+func (h *BackupHandler) GetStorageType(c *gin.Context) {
+	t, err := h.backupService.GetStorageType(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"type": t})
+}
+
+func (h *BackupHandler) UpdateStorageType(c *gin.Context) {
+	var req UpdateStorageTypeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if err := h.backupService.UpdateStorageType(c.Request.Context(), req.Type); err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, gin.H{"type": req.Type})
+}
+
+func (h *BackupHandler) GetWebDAVConfig(c *gin.Context) {
+	cfg, err := h.backupService.GetWebDAVConfig(c.Request.Context())
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, cfg)
+}
+
+func (h *BackupHandler) UpdateWebDAVConfig(c *gin.Context) {
+	var req service.BackupWebDAVConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	cfg, err := h.backupService.UpdateWebDAVConfig(c.Request.Context(), req)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	response.Success(c, cfg)
+}
+
+func (h *BackupHandler) TestWebDAVConnection(c *gin.Context) {
+	var req service.BackupWebDAVConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	err := h.backupService.TestWebDAVConnection(c.Request.Context(), req)
+	if err != nil {
+		response.Success(c, gin.H{"ok": false, "message": err.Error()})
+		return
+	}
+	response.Success(c, gin.H{"ok": true, "message": "connection successful"})
+}
+
+// ProxyDownload 代理下载备份文件（WebDAV 场景无预签名 URL，通过后端流式代理）
+func (h *BackupHandler) ProxyDownload(c *gin.Context) {
+	backupID := c.Param("id")
+	if backupID == "" {
+		response.BadRequest(c, "backup ID is required")
+		return
+	}
+
+	// 先获取记录元数据，拿到文件名
+	record, err := h.backupService.GetBackupRecord(c.Request.Context(), backupID)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	fileName := record.FileName
+	if len(fileName) > 3 && fileName[len(fileName)-3:] == ".gz" {
+		fileName = fileName[:len(fileName)-3]
+	}
+
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+	c.Header("Content-Type", "application/octet-stream")
+	c.Status(http.StatusOK)
+
+	if _, err := h.backupService.StreamDownload(c.Request.Context(), backupID, c.Writer); err != nil {
+		// 已开始写 body，无法返回 JSON 错误
+		return
+	}
 }
 
 // ─── 异步生图对象存储配置 ───

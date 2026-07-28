@@ -218,7 +218,8 @@ func newTestBackupService(repo *mockSettingRepo, dumper DBDumper, store *mockObj
 	factory := func(_ context.Context, _ *BackupS3Config) (BackupObjectStore, error) {
 		return store, nil
 	}
-	return NewBackupService(repo, cfg, &plainEncryptor{}, factory, dumper)
+	webdavFactory := func(_ *BackupWebDAVConfig) BackupObjectStore { return newMockObjectStore() }
+	return NewBackupService(repo, cfg, &plainEncryptor{}, factory, webdavFactory, dumper)
 }
 
 // newTestBackupServiceEphemeralKey mirrors a deployment that never set
@@ -231,7 +232,8 @@ func newTestBackupServiceEphemeralKey(repo *mockSettingRepo) *BackupService {
 	factory := func(_ context.Context, _ *BackupS3Config) (BackupObjectStore, error) {
 		return newMockObjectStore(), nil
 	}
-	return NewBackupService(repo, cfg, &plainEncryptor{}, factory, &mockDumper{})
+	webdavFactory := func(_ *BackupWebDAVConfig) BackupObjectStore { return newMockObjectStore() }
+	return NewBackupService(repo, cfg, &plainEncryptor{}, factory, webdavFactory, &mockDumper{})
 }
 
 func seedS3Config(t *testing.T, repo *mockSettingRepo) {
