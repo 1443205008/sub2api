@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"path"
 	"strings"
 	"time"
@@ -32,7 +33,7 @@ type WebDAVBackupStore struct {
 func NewWebDAVBackupStore(cfg *service.BackupWebDAVConfig) *WebDAVBackupStore {
 	baseURL := strings.TrimRight(cfg.URL, "/") + "/"
 	return &WebDAVBackupStore{
-		client:   &http.Client{Timeout: 60 * time.Second},
+		client:   &http.Client{},
 		baseURL:  baseURL,
 		username: cfg.Username,
 		password: cfg.Password,
@@ -60,7 +61,7 @@ func (s *WebDAVBackupStore) doRequest(ctx context.Context, method, url string, b
 }
 
 // mkcolAll ensures all intermediate directories in dirPath exist by issuing MKCOL
-// for each segment. Already-existing directories (405/409) are silently skipped.
+// for each segment. Already-existing directories (405) are silently skipped.
 func (s *WebDAVBackupStore) mkcolAll(ctx context.Context, dirPath string) error {
 	// dirPath is like "backups/2026/07/27"
 	parts := strings.Split(strings.Trim(dirPath, "/"), "/")
@@ -75,20 +76,21 @@ func (s *WebDAVBackupStore) mkcolAll(ctx context.Context, dirPath string) error 
 		if err != nil {
 			return fmt.Errorf("MKCOL %s: %w", url, err)
 		}
-		_ = resp.Body.Close()
 		// 201 Created: ok
 		// 405 Method Not Allowed: directory already exists — ok
-		// 409 Conflict: parent doesn't exist (shouldn't happen since we go depth-first) — ok to ignore
 		if resp.StatusCode != http.StatusCreated &&
-			resp.StatusCode != http.StatusMethodNotAllowed &&
-			resp.StatusCode != http.StatusConflict {
-			return fmt.Errorf("MKCOL %s: unexpected status %d", url, resp.StatusCode)
+			resp.StatusCode != http.StatusMethodNotAllowed {
+			err := webDAVResponseError("WebDAV MKCOL "+url, resp)
+			_ = resp.Body.Close()
+			return err
 		}
+		_ = resp.Body.Close()
 	}
 	return nil
 }
 
-// Upload creates intermediate directories then PUTs the file content.
+// Upload stages the incoming stream in a temporary file before PUT. A number of
+// WebDAV backends reject chunked uploads, so PUT must carry an exact Content-Length.
 func (s *WebDAVBackupStore) Upload(ctx context.Context, key string, body io.Reader, contentType string) (int64, error) {
 	// Ensure parent directory exists
 	dirPath := path.Dir(key)
@@ -98,18 +100,44 @@ func (s *WebDAVBackupStore) Upload(ctx context.Context, key string, body io.Read
 		}
 	}
 
-	// Use a counting reader to track uploaded bytes
-	cr := &countingReader{r: body}
-	resp, err := s.doRequest(ctx, "PUT", s.fullURL(key), cr, contentType)
+	tmp, err := os.CreateTemp("", "sub2api-webdav-backup-*")
+	if err != nil {
+		return 0, fmt.Errorf("create WebDAV upload temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}()
+
+	sizeBytes, err := io.Copy(tmp, body)
+	if err != nil {
+		return 0, fmt.Errorf("stage WebDAV upload body: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		return 0, fmt.Errorf("rewind WebDAV upload temp file: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.fullURL(key), tmp)
+	if err != nil {
+		return 0, fmt.Errorf("create WebDAV PUT request: %w", err)
+	}
+	req.SetBasicAuth(s.username, s.password)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	req.ContentLength = sizeBytes
+
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return 0, fmt.Errorf("WebDAV PUT: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
-		return 0, fmt.Errorf("WebDAV PUT %s: status %d", key, resp.StatusCode)
+		return 0, webDAVResponseError("WebDAV PUT "+key, resp)
 	}
-	return cr.n, nil
+	return sizeBytes, nil
 }
 
 // Download fetches the file and returns a streaming reader.
@@ -119,8 +147,9 @@ func (s *WebDAVBackupStore) Download(ctx context.Context, key string) (io.ReadCl
 		return nil, fmt.Errorf("WebDAV GET: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
+		err := webDAVResponseError("WebDAV GET "+key, resp)
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("WebDAV GET %s: status %d", key, resp.StatusCode)
+		return nil, err
 	}
 	return resp.Body, nil
 }
@@ -135,7 +164,7 @@ func (s *WebDAVBackupStore) Delete(ctx context.Context, key string) error {
 
 	// 204 No Content: success; 404 Not Found: already gone — both acceptable
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("WebDAV DELETE %s: status %d", key, resp.StatusCode)
+		return webDAVResponseError("WebDAV DELETE "+key, resp)
 	}
 	return nil
 }
@@ -166,19 +195,31 @@ func (s *WebDAVBackupStore) HeadBucket(ctx context.Context) error {
 		if resp.StatusCode == http.StatusUnauthorized {
 			return fmt.Errorf("WebDAV authentication failed: check username and password")
 		}
-		return fmt.Errorf("WebDAV PROPFIND %s: status %d", s.baseURL, resp.StatusCode)
+		return webDAVResponseError("WebDAV PROPFIND "+s.baseURL, resp)
 	}
 	return nil
 }
 
-// countingReader wraps an io.Reader and counts bytes read.
-type countingReader struct {
-	r io.Reader
-	n int64
-}
+const maxWebDAVErrorBodyBytes = 4 << 10
 
-func (c *countingReader) Read(p []byte) (int, error) {
-	n, err := c.r.Read(p)
-	c.n += int64(n)
-	return n, err
+func webDAVResponseError(operation string, resp *http.Response) error {
+	data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVErrorBodyBytes+1))
+	if readErr != nil {
+		return fmt.Errorf("%s: status %d (read error response: %v)", operation, resp.StatusCode, readErr)
+	}
+
+	truncated := len(data) > maxWebDAVErrorBodyBytes
+	if truncated {
+		data = data[:maxWebDAVErrorBodyBytes]
+	}
+	detail := strings.TrimSpace(string(data))
+	detail = strings.ReplaceAll(detail, "\r", " ")
+	detail = strings.ReplaceAll(detail, "\n", " ")
+	if detail == "" {
+		return fmt.Errorf("%s: status %d", operation, resp.StatusCode)
+	}
+	if truncated {
+		detail += "... (truncated)"
+	}
+	return fmt.Errorf("%s: status %d: %s", operation, resp.StatusCode, detail)
 }

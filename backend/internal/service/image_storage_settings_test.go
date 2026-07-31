@@ -78,7 +78,7 @@ func newImageStorageFixtureWithKey(t *testing.T, fallback config.ImageStorageCon
 	encryptor := reversibleEncryptor{}
 	backup := NewBackupService(repo, &config.Config{
 		Totp: config.TotpConfig{EncryptionKeyConfigured: encryptionKeyConfigured},
-	}, encryptor, nil, nil)
+	}, encryptor, nil, nil, nil)
 
 	var built []config.ImageStorageConfig
 	factory := func(_ context.Context, cfg *config.ImageStorageConfig) (ImageStorage, error) {

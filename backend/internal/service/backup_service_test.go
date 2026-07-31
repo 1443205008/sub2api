@@ -421,6 +421,18 @@ func TestBackupService_CreateBackup_DumpFailure(t *testing.T) {
 	require.Contains(t, record.ErrorMsg, "pg_dump")
 }
 
+func TestBackupUploadErrorMessagePreservesUploadFailure(t *testing.T) {
+	message := backupUploadErrorMessage(
+		fmt.Errorf("WebDAV PUT: status 500: storage driver rejected upload"),
+		fmt.Errorf("io: read/write on closed pipe"),
+	)
+
+	require.Contains(t, message, "WebDAV PUT: status 500")
+	require.Contains(t, message, "storage driver rejected upload")
+	require.Contains(t, message, "gzip/dump also failed")
+	require.Contains(t, message, "closed pipe")
+}
+
 func TestBackupService_CreateBackup_NoS3Config(t *testing.T) {
 	repo := newMockSettingRepo()
 	svc := newTestBackupService(repo, &mockDumper{}, newMockObjectStore())

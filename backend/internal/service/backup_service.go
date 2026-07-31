@@ -40,14 +40,14 @@ const (
 )
 
 var (
-	ErrBackupS3NotConfigured      = infraerrors.BadRequest("BACKUP_S3_NOT_CONFIGURED", "backup S3 storage is not configured")
-	ErrBackupWebDAVNotConfigured  = infraerrors.BadRequest("BACKUP_WEBDAV_NOT_CONFIGURED", "backup WebDAV storage is not configured")
-	ErrBackupNotFound             = infraerrors.NotFound("BACKUP_NOT_FOUND", "backup record not found")
-	ErrBackupInProgress           = infraerrors.Conflict("BACKUP_IN_PROGRESS", "a backup is already in progress")
-	ErrRestoreInProgress          = infraerrors.Conflict("RESTORE_IN_PROGRESS", "a restore is already in progress")
-	ErrBackupRecordsCorrupt       = infraerrors.InternalServer("BACKUP_RECORDS_CORRUPT", "backup records data is corrupted")
-	ErrBackupS3ConfigCorrupt      = infraerrors.InternalServer("BACKUP_S3_CONFIG_CORRUPT", "backup S3 config data is corrupted")
-	ErrBackupWebDAVConfigCorrupt  = infraerrors.InternalServer("BACKUP_WEBDAV_CONFIG_CORRUPT", "backup WebDAV config data is corrupted")
+	ErrBackupS3NotConfigured     = infraerrors.BadRequest("BACKUP_S3_NOT_CONFIGURED", "backup S3 storage is not configured")
+	ErrBackupWebDAVNotConfigured = infraerrors.BadRequest("BACKUP_WEBDAV_NOT_CONFIGURED", "backup WebDAV storage is not configured")
+	ErrBackupNotFound            = infraerrors.NotFound("BACKUP_NOT_FOUND", "backup record not found")
+	ErrBackupInProgress          = infraerrors.Conflict("BACKUP_IN_PROGRESS", "a backup is already in progress")
+	ErrRestoreInProgress         = infraerrors.Conflict("RESTORE_IN_PROGRESS", "a restore is already in progress")
+	ErrBackupRecordsCorrupt      = infraerrors.InternalServer("BACKUP_RECORDS_CORRUPT", "backup records data is corrupted")
+	ErrBackupS3ConfigCorrupt     = infraerrors.InternalServer("BACKUP_S3_CONFIG_CORRUPT", "backup S3 config data is corrupted")
+	ErrBackupWebDAVConfigCorrupt = infraerrors.InternalServer("BACKUP_WEBDAV_CONFIG_CORRUPT", "backup WebDAV config data is corrupted")
 
 	// ErrSecretEncryptionKeyNotConfigured is returned when an S3 SecretAccessKey
 	// would be encrypted with an auto-generated (ephemeral) key. That key is
@@ -89,7 +89,7 @@ type BackupWebDAVStoreFactory func(cfg *BackupWebDAVConfig) BackupObjectStore
 
 // BackupWebDAVConfig WebDAV 存储配置
 type BackupWebDAVConfig struct {
-	URL      string `json:"url"`               // WebDAV 服务器地址，如 https://dav.jianguoyun.com/dav/
+	URL      string `json:"url"` // WebDAV 服务器地址，如 https://dav.jianguoyun.com/dav/
 	Username string `json:"username"`
 	Password string `json:"password,omitempty"` // 存储时加密
 	Prefix   string `json:"prefix"`             // 路径前缀，如 "backups"
@@ -161,7 +161,7 @@ type BackupService struct {
 	backingUp bool
 	restoring bool
 
-	storeMu     sync.Mutex        // 保护 store/s3Cfg/webdavCfg/storageType 缓存
+	storeMu     sync.Mutex // 保护 store/s3Cfg/webdavCfg/storageType 缓存
 	store       BackupObjectStore
 	s3Cfg       *BackupS3Config
 	webdavCfg   *BackupWebDAVConfig
@@ -662,11 +662,7 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 		_ = pr.CloseWithError(err) // 确保 gzip goroutine 不会悬挂
 		gzErr := <-gzipDone        // 安全等待 gzip goroutine 完成
 		record.Status = "failed"
-		errMsg := fmt.Sprintf("S3 upload failed: %v", err)
-		if gzErr != nil {
-			errMsg = fmt.Sprintf("gzip/dump failed: %v", gzErr)
-		}
-		record.ErrorMsg = errMsg
+		record.ErrorMsg = backupUploadErrorMessage(err, gzErr)
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		_ = s.saveRecord(ctx, record)
 		return record, fmt.Errorf("backup upload: %w", err)
@@ -822,11 +818,7 @@ func (s *BackupService) executeBackup(record *BackupRecord, objectStore BackupOb
 		_ = pr.CloseWithError(err) // 确保 gzip goroutine 不会悬挂
 		gzErr := <-gzipDone        // 安全等待 gzip goroutine 完成
 		record.Status = "failed"
-		errMsg := fmt.Sprintf("S3 upload failed: %v", err)
-		if gzErr != nil {
-			errMsg = fmt.Sprintf("gzip/dump failed: %v", gzErr)
-		}
-		record.ErrorMsg = errMsg
+		record.ErrorMsg = backupUploadErrorMessage(err, gzErr)
 		record.Progress = ""
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		_ = s.saveRecord(context.Background(), record)
@@ -841,6 +833,14 @@ func (s *BackupService) executeBackup(record *BackupRecord, objectStore BackupOb
 	if err := s.saveRecord(context.Background(), record); err != nil {
 		logger.LegacyPrintf("service.backup", "[Backup] 保存备份记录失败: %v", err)
 	}
+}
+
+func backupUploadErrorMessage(uploadErr, gzipErr error) string {
+	message := fmt.Sprintf("backup upload failed: %v", uploadErr)
+	if gzipErr != nil {
+		message += fmt.Sprintf("; gzip/dump also failed: %v", gzipErr)
+	}
+	return message
 }
 
 // RestoreBackup 从 S3 下载备份并流式恢复到数据库
