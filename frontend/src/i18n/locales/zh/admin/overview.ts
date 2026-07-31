@@ -83,6 +83,20 @@ export default {
     backup: {
       title: '数据库备份',
       description: '全量数据库备份到 S3 兼容存储，支持定时备份与恢复',
+      storageType: {
+        title: '存储类型',
+        compatible: '兼容存储'
+      },
+      webdav: {
+        title: 'WebDAV 存储配置',
+        description: '配置 WebDAV 远程存储，用于上传和恢复数据库备份',
+        commonAddresses: '常见服务地址',
+        commonAddressesTitle: '常见 WebDAV 地址',
+        url: 'WebDAV 地址',
+        username: '用户名',
+        password: '密码',
+        prefix: '备份目录前缀'
+      },
       s3: {
         title: 'S3 存储配置',
         description: '配置 S3 兼容存储（支持 Cloudflare R2）',

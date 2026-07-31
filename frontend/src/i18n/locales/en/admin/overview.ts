@@ -83,6 +83,20 @@ export default {
     backup: {
       title: 'Database Backup',
       description: 'Full database backup to S3-compatible storage with scheduled backup and restore',
+      storageType: {
+        title: 'Storage Type',
+        compatible: 'Compatible Storage'
+      },
+      webdav: {
+        title: 'WebDAV Storage Configuration',
+        description: 'Configure WebDAV remote storage for uploading and restoring database backups',
+        commonAddresses: 'Common Service Addresses',
+        commonAddressesTitle: 'Common WebDAV Addresses',
+        url: 'WebDAV URL',
+        username: 'Username',
+        password: 'Password',
+        prefix: 'Backup Directory Prefix'
+      },
       s3: {
         title: 'S3 Storage Configuration',
         description: 'Configure S3-compatible storage (supports Cloudflare R2)',
