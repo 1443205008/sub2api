@@ -119,6 +119,9 @@ type CreateGroupRequest struct {
 	PeakEnd                         string                      `json:"peak_end"`
 	PeakRateMultiplier              *float64                    `json:"peak_rate_multiplier"`
 	RateTimeRules                   []service.GroupRateTimeRule `json:"rate_time_rules"`
+	ProfitControlEnabled            bool                        `json:"profit_control_enabled"`
+	ProfitMinMargin                 *float64                    `json:"profit_min_margin"`
+	ProfitSafetyBuffer              *float64                    `json:"profit_safety_buffer"`
 	ImagePrice1K                    *float64                    `json:"image_price_1k"`
 	ImagePrice2K                    *float64                    `json:"image_price_2k"`
 	ImagePrice4K                    *float64                    `json:"image_price_4k"`
@@ -179,6 +182,9 @@ type UpdateGroupRequest struct {
 	PeakEnd                         *string                      `json:"peak_end"`
 	PeakRateMultiplier              *float64                     `json:"peak_rate_multiplier"`
 	RateTimeRules                   *[]service.GroupRateTimeRule `json:"rate_time_rules"`
+	ProfitControlEnabled            *bool                        `json:"profit_control_enabled"`
+	ProfitMinMargin                 *float64                     `json:"profit_min_margin"`
+	ProfitSafetyBuffer              *float64                     `json:"profit_safety_buffer"`
 	ImagePrice1K                    *float64                     `json:"image_price_1k"`
 	ImagePrice2K                    *float64                     `json:"image_price_2k"`
 	ImagePrice4K                    *float64                     `json:"image_price_4k"`
@@ -504,6 +510,9 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		PeakEnd:                         req.PeakEnd,
 		PeakRateMultiplier:              req.PeakRateMultiplier,
 		RateTimeRules:                   req.RateTimeRules,
+		ProfitControlEnabled:            req.ProfitControlEnabled,
+		ProfitMinMargin:                 req.ProfitMinMargin,
+		ProfitSafetyBuffer:              req.ProfitSafetyBuffer,
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,
@@ -624,6 +633,9 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		PeakEnd:                         req.PeakEnd,
 		PeakRateMultiplier:              req.PeakRateMultiplier,
 		RateTimeRules:                   req.RateTimeRules,
+		ProfitControlEnabled:            req.ProfitControlEnabled,
+		ProfitMinMargin:                 req.ProfitMinMargin,
+		ProfitSafetyBuffer:              req.ProfitSafetyBuffer,
 		ImagePrice1K:                    req.ImagePrice1K,
 		ImagePrice2K:                    req.ImagePrice2K,
 		ImagePrice4K:                    req.ImagePrice4K,

@@ -378,6 +378,19 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	if err := ValidateGroupRateTimeRules(rateTimeRules); err != nil {
 		return nil, err
 	}
+	profitMinMargin := 0.0
+	if input.ProfitMinMargin != nil {
+		profitMinMargin = *input.ProfitMinMargin
+	}
+	profitSafetyBuffer := 0.0
+	if input.ProfitSafetyBuffer != nil {
+		profitSafetyBuffer = *input.ProfitSafetyBuffer
+	}
+	// 利润控制与高峰倍率同一收口顺序：先按平台归一化，再校验。
+	profitControlEnabled, profitMinMargin, profitSafetyBuffer := NormalizeProfitControlConfig(platform, input.ProfitControlEnabled, profitMinMargin, profitSafetyBuffer)
+	if err := ValidateProfitControlConfig(platform, profitControlEnabled, profitMinMargin, profitSafetyBuffer); err != nil {
+		return nil, err
+	}
 
 	// 校验降级分组
 	if input.FallbackGroupID != nil {
@@ -461,6 +474,9 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		PeakEnd:                         peakEnd,
 		PeakRateMultiplier:              peakRateMultiplier,
 		RateTimeRules:                   rateTimeRules,
+		ProfitControlEnabled:            profitControlEnabled,
+		ProfitMinMargin:                 profitMinMargin,
+		ProfitSafetyBuffer:              profitSafetyBuffer,
 		ImagePrice1K:                    imagePrice1K,
 		ImagePrice2K:                    imagePrice2K,
 		ImagePrice4K:                    imagePrice4K,
@@ -717,6 +733,20 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 		group.RateTimeRules = NormalizeGroupRateTimeRules(*input.RateTimeRules)
 	}
 	if err := ValidateGroupRateTimeRules(group.RateTimeRules); err != nil {
+		return nil, err
+	}
+	if input.ProfitControlEnabled != nil {
+		group.ProfitControlEnabled = *input.ProfitControlEnabled
+	}
+	if input.ProfitMinMargin != nil {
+		group.ProfitMinMargin = *input.ProfitMinMargin
+	}
+	if input.ProfitSafetyBuffer != nil {
+		group.ProfitSafetyBuffer = *input.ProfitSafetyBuffer
+	}
+	// 利润控制与高峰倍率同一收口：按合并后的最终平台归一化并校验。
+	group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer = NormalizeProfitControlConfig(group.Platform, group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer)
+	if err := ValidateProfitControlConfig(group.Platform, group.ProfitControlEnabled, group.ProfitMinMargin, group.ProfitSafetyBuffer); err != nil {
 		return nil, err
 	}
 	if input.ImagePrice1K != nil {

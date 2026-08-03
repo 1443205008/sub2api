@@ -588,6 +588,11 @@ export interface AdminGroup extends Group {
   active_account_count?: number
   rate_limited_account_count?: number
 
+  // 分组利润控制（仅管理员可见，margin/buffer 为小数）
+  profit_control_enabled?: boolean
+  profit_min_margin?: number
+  profit_safety_buffer?: number
+
   // OpenAI Messages 调度配置（仅 openai 平台使用）
   default_mapped_model?: string
   messages_dispatch_model_config?: OpenAIMessagesDispatchModelConfig
@@ -749,6 +754,10 @@ export interface CreateGroupRequest {
   peak_end?: string
   peak_rate_multiplier?: number
   rate_time_rules?: GroupRateTimeRule[]
+  // Group profit control (margin/buffer are stored as decimals)
+  profit_control_enabled?: boolean
+  profit_min_margin?: number
+  profit_safety_buffer?: number
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null
@@ -801,6 +810,10 @@ export interface UpdateGroupRequest {
   peak_end?: string
   peak_rate_multiplier?: number
   rate_time_rules?: GroupRateTimeRule[]
+  // Group profit control (margin/buffer are stored as decimals)
+  profit_control_enabled?: boolean
+  profit_min_margin?: number
+  profit_safety_buffer?: number
   claude_code_only?: boolean
   fallback_group_id?: number | null
   fallback_group_id_on_invalid_request?: number | null

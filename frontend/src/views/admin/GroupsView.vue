@@ -1105,6 +1105,103 @@
           </div>
         </div>
 
+        <!-- 高峰时段倍率配置（仅订阅类型分组） -->
+        <div v-if="createForm.subscription_type === 'subscription'" class="border-t pt-4">
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="createForm.peak_rate_enabled"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>{{ t("admin.groups.peakRate.enable") }}</span>
+            </label>
+          </div>
+          <div
+            v-if="createForm.peak_rate_enabled"
+            class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3"
+          >
+            <div>
+              <label class="input-label">{{ t("admin.groups.peakRate.peakStart") }}</label>
+              <input
+                v-model="createForm.peak_start"
+                type="time"
+                class="input"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.peakRate.peakEnd") }}</label>
+              <input
+                v-model="createForm.peak_end"
+                type="time"
+                class="input"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.peakRate.peakMultiplier") }}</label>
+              <input
+                v-model.number="createForm.peak_rate_multiplier"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="1"
+                :title="t('admin.groups.peakRate.multiplierHint')"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 分组利润控制（五个平台 token 请求） -->
+        <div v-if="isProfitControlPlatform(createForm.platform)" class="border-t pt-4">
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="createForm.profit_control_enabled"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>{{ t("admin.groups.profitControl.enable") }}</span>
+          </label>
+          <p class="mb-3 mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {{
+              createForm.profit_control_enabled
+                ? t("admin.groups.profitControl.enabledHint")
+                : t("admin.groups.profitControl.disabledHint")
+            }}
+          </p>
+          <div
+            v-if="createForm.profit_control_enabled"
+            class="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2"
+          >
+            <div>
+              <label class="input-label">{{ t("admin.groups.profitControl.minMargin") }}</label>
+              <input
+                v-model.number="createForm.profit_min_margin_percent"
+                type="number"
+                step="0.1"
+                min="0"
+                max="99.99"
+                class="input"
+                placeholder="0"
+                :title="t('admin.groups.profitControl.minMarginHint')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.profitControl.safetyBuffer") }}</label>
+              <input
+                v-model.number="createForm.profit_safety_buffer_percent"
+                type="number"
+                step="0.1"
+                min="0"
+                max="99.99"
+                class="input"
+                placeholder="0"
+                :title="t('admin.groups.profitControl.safetyBufferHint')"
+              />
+            </div>
+          </div>
+        </div>
+
         <!-- 多时段倍率配置 -->
         <div class="border-t pt-4">
           <div class="mb-3 flex items-start justify-between gap-4">
@@ -1112,19 +1209,12 @@
               <label class="input-label">{{ t("admin.groups.rateTimeRules.title") }}</label>
               <p class="input-hint">{{ t("admin.groups.rateTimeRules.hint") }}</p>
             </div>
-            <button
-              type="button"
-              class="btn btn-secondary shrink-0"
-              @click="addCreateRateTimeRule"
-            >
+            <button type="button" class="btn btn-secondary shrink-0" @click="addCreateRateTimeRule">
               <Icon name="plus" size="sm" />
               {{ t("admin.groups.rateTimeRules.add") }}
             </button>
           </div>
-          <p
-            v-if="createForm.rate_time_rules.length === 0"
-            class="py-2 text-sm text-gray-500 dark:text-gray-400"
-          >
+          <p v-if="createForm.rate_time_rules.length === 0" class="py-2 text-sm text-gray-500 dark:text-gray-400">
             {{ t("admin.groups.rateTimeRules.empty") }}
           </p>
           <div
@@ -1144,13 +1234,7 @@
               <label class="input-label">{{ t("admin.groups.rateTimeRules.multiplier") }}</label>
               <input v-model.number="rule.multiplier" type="number" step="0.001" min="0" class="input" />
             </div>
-            <button
-              type="button"
-              class="col-span-2 flex h-9 w-9 items-center justify-center justify-self-end rounded text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 md:col-span-1 md:mt-6 md:justify-self-auto"
-              :title="t('admin.groups.rateTimeRules.remove')"
-              :aria-label="t('admin.groups.rateTimeRules.remove')"
-              @click="removeCreateRateTimeRule(index)"
-            >
+            <button type="button" class="col-span-2 flex h-9 w-9 items-center justify-center justify-self-end rounded text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 md:col-span-1 md:mt-6 md:justify-self-auto" :title="t('admin.groups.rateTimeRules.remove')" :aria-label="t('admin.groups.rateTimeRules.remove')" @click="removeCreateRateTimeRule(index)">
               <Icon name="trash" size="sm" />
             </button>
           </div>
@@ -2664,6 +2748,103 @@
           </div>
         </div>
 
+        <!-- 高峰时段倍率配置（仅订阅类型分组） -->
+        <div v-if="editForm.subscription_type === 'subscription'" class="border-t pt-4">
+          <div class="mb-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+              <input
+                v-model="editForm.peak_rate_enabled"
+                type="checkbox"
+                class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>{{ t("admin.groups.peakRate.enable") }}</span>
+            </label>
+          </div>
+          <div
+            v-if="editForm.peak_rate_enabled"
+            class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3"
+          >
+            <div>
+              <label class="input-label">{{ t("admin.groups.peakRate.peakStart") }}</label>
+              <input
+                v-model="editForm.peak_start"
+                type="time"
+                class="input"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.peakRate.peakEnd") }}</label>
+              <input
+                v-model="editForm.peak_end"
+                type="time"
+                class="input"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.peakRate.peakMultiplier") }}</label>
+              <input
+                v-model.number="editForm.peak_rate_multiplier"
+                type="number"
+                step="0.001"
+                min="0"
+                class="input"
+                placeholder="1"
+                :title="t('admin.groups.peakRate.multiplierHint')"
+              />
+            </div>
+          </div>
+        </div>
+
+        <!-- 分组利润控制（五个平台 token 请求） -->
+        <div v-if="isProfitControlPlatform(editForm.platform)" class="border-t pt-4">
+          <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+            <input
+              v-model="editForm.profit_control_enabled"
+              type="checkbox"
+              class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>{{ t("admin.groups.profitControl.enable") }}</span>
+          </label>
+          <p class="mb-3 mt-1.5 text-xs text-gray-500 dark:text-gray-400">
+            {{
+              editForm.profit_control_enabled
+                ? t("admin.groups.profitControl.enabledHint")
+                : t("admin.groups.profitControl.disabledHint")
+            }}
+          </p>
+          <div
+            v-if="editForm.profit_control_enabled"
+            class="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2"
+          >
+            <div>
+              <label class="input-label">{{ t("admin.groups.profitControl.minMargin") }}</label>
+              <input
+                v-model.number="editForm.profit_min_margin_percent"
+                type="number"
+                step="0.1"
+                min="0"
+                max="99.99"
+                class="input"
+                placeholder="0"
+                :title="t('admin.groups.profitControl.minMarginHint')"
+              />
+            </div>
+            <div>
+              <label class="input-label">{{ t("admin.groups.profitControl.safetyBuffer") }}</label>
+              <input
+                v-model.number="editForm.profit_safety_buffer_percent"
+                type="number"
+                step="0.1"
+                min="0"
+                max="99.99"
+                class="input"
+                placeholder="0"
+                :title="t('admin.groups.profitControl.safetyBufferHint')"
+              />
+            </div>
+          </div>
+        </div>
+
         <!-- 多时段倍率配置 -->
         <div class="border-t pt-4">
           <div class="mb-3 flex items-start justify-between gap-4">
@@ -2676,10 +2857,7 @@
               {{ t("admin.groups.rateTimeRules.add") }}
             </button>
           </div>
-          <p
-            v-if="editForm.rate_time_rules.length === 0"
-            class="py-2 text-sm text-gray-500 dark:text-gray-400"
-          >
+          <p v-if="editForm.rate_time_rules.length === 0" class="py-2 text-sm text-gray-500 dark:text-gray-400">
             {{ t("admin.groups.rateTimeRules.empty") }}
           </p>
           <div
@@ -2699,13 +2877,7 @@
               <label class="input-label">{{ t("admin.groups.rateTimeRules.multiplier") }}</label>
               <input v-model.number="rule.multiplier" type="number" step="0.001" min="0" class="input" />
             </div>
-            <button
-              type="button"
-              class="col-span-2 flex h-9 w-9 items-center justify-center justify-self-end rounded text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 md:col-span-1 md:mt-6 md:justify-self-auto"
-              :title="t('admin.groups.rateTimeRules.remove')"
-              :aria-label="t('admin.groups.rateTimeRules.remove')"
-              @click="removeEditRateTimeRule(index)"
-            >
+            <button type="button" class="col-span-2 flex h-9 w-9 items-center justify-center justify-self-end rounded text-gray-400 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-900/20 md:col-span-1 md:mt-6 md:justify-self-auto" :title="t('admin.groups.rateTimeRules.remove')" :aria-label="t('admin.groups.rateTimeRules.remove')" @click="removeEditRateTimeRule(index)">
               <Icon name="trash" size="sm" />
             </button>
           </div>
@@ -4101,6 +4273,13 @@ import {
 import { createModelsListCandidatesTracker } from "./groupsModelsListCandidates";
 import { normalizeSupportedModelScopesForPlatform } from "./groupsSupportedModelScopes";
 import {
+  isProfitControlPlatform,
+  profitPercentToDecimal,
+  profitDecimalToPercent,
+  validateProfitControlFormState,
+  type ProfitControlFormState,
+} from "./groupsProfitControl";
+import {
   normalizeReasoningEffortForPlatform,
   reasoningEffortMappingsToAPI,
   reasoningEffortMappingsToRows,
@@ -4619,6 +4798,15 @@ const createForm = reactive({
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
   rate_time_rules: [] as GroupRateTimeRule[],
+  // 高峰时段倍率配置
+  peak_rate_enabled: false,
+  peak_start: "",
+  peak_end: "",
+  peak_rate_multiplier: 1.0,
+  // 分组利润控制（五个 token 平台）；界面按百分比输入，提交时转小数
+  profit_control_enabled: false,
+  profit_min_margin_percent: 0,
+  profit_safety_buffer_percent: 0,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -4678,10 +4866,6 @@ const resolveEditMessagesDispatchRowKey =
   createStableObjectKeyResolver<MessagesDispatchMappingRow>(
     "edit-messages-dispatch-row",
   );
-const resolveCreateRateTimeRuleKey =
-  createStableObjectKeyResolver<GroupRateTimeRule>("create-rate-time-rule");
-const resolveEditRateTimeRuleKey =
-  createStableObjectKeyResolver<GroupRateTimeRule>("edit-rate-time-rule");
 
 const getCreateRuleRenderKey = (rule: ModelRoutingRule) =>
   resolveCreateRuleKey(rule);
@@ -4691,33 +4875,25 @@ const getCreateMessagesDispatchRowKey = (row: MessagesDispatchMappingRow) =>
   resolveCreateMessagesDispatchRowKey(row);
 const getEditMessagesDispatchRowKey = (row: MessagesDispatchMappingRow) =>
   resolveEditMessagesDispatchRowKey(row);
+
+const resolveCreateRateTimeRuleKey =
+  createStableObjectKeyResolver<GroupRateTimeRule>("create-rate-time-rule");
+const resolveEditRateTimeRuleKey =
+  createStableObjectKeyResolver<GroupRateTimeRule>("edit-rate-time-rule");
 const getCreateRateTimeRuleKey = (rule: GroupRateTimeRule) =>
   resolveCreateRateTimeRuleKey(rule);
 const getEditRateTimeRuleKey = (rule: GroupRateTimeRule) =>
   resolveEditRateTimeRuleKey(rule);
-
 const newRateTimeRule = (): GroupRateTimeRule => ({
   start: "09:00",
   end: "18:00",
   multiplier: 1,
 });
-
-const addCreateRateTimeRule = () => {
-  createForm.rate_time_rules.push(newRateTimeRule());
-};
-const removeCreateRateTimeRule = (index: number) => {
-  createForm.rate_time_rules.splice(index, 1);
-};
-const addEditRateTimeRule = () => {
-  editForm.rate_time_rules.push(newRateTimeRule());
-};
-const removeEditRateTimeRule = (index: number) => {
-  editForm.rate_time_rules.splice(index, 1);
-};
-
-const normalizeRateTimeRules = (
-  rules: GroupRateTimeRule[],
-): GroupRateTimeRule[] =>
+const addCreateRateTimeRule = () => createForm.rate_time_rules.push(newRateTimeRule());
+const removeCreateRateTimeRule = (index: number) => createForm.rate_time_rules.splice(index, 1);
+const addEditRateTimeRule = () => editForm.rate_time_rules.push(newRateTimeRule());
+const removeEditRateTimeRule = (index: number) => editForm.rate_time_rules.splice(index, 1);
+const normalizeRateTimeRules = (rules: GroupRateTimeRule[]): GroupRateTimeRule[] =>
   rules.map((rule) => ({
     start: rule.start.trim(),
     end: rule.end.trim(),
@@ -5001,6 +5177,15 @@ const editForm = reactive({
   // Codex 网页搜索按次计费（仅 openai 平台使用）；null = 使用默认价 0.01
   web_search_price_per_call: null as number | null,
   rate_time_rules: [] as GroupRateTimeRule[],
+  // 高峰时段倍率配置
+  peak_rate_enabled: false,
+  peak_start: "",
+  peak_end: "",
+  peak_rate_multiplier: 1.0,
+  // 分组利润控制（五个 token 平台）；界面按百分比输入，提交时转小数
+  profit_control_enabled: false,
+  profit_min_margin_percent: 0,
+  profit_safety_buffer_percent: 0,
   // Claude Code 客户端限制（仅 anthropic 平台使用）
   claude_code_only: false,
   fallback_group_id: null as number | null,
@@ -5042,6 +5227,10 @@ type ImagePricingFormState = {
   image_price_1k: number | string | null;
   image_price_2k: number | string | null;
   image_price_4k: number | string | null;
+  peak_rate_enabled: boolean;
+  peak_start: string;
+  peak_end: string;
+  peak_rate_multiplier: number;
 };
 
 type VideoPricingFormState = {
@@ -5437,7 +5626,14 @@ const closeCreateModal = () => {
   createForm.video_price_720p = null;
   createForm.video_price_1080p = null;
   createForm.web_search_price_per_call = null;
+  createForm.peak_rate_enabled = false;
+  createForm.peak_start = "";
+  createForm.peak_end = "";
+  createForm.peak_rate_multiplier = 1.0;
   createForm.rate_time_rules = [];
+  createForm.profit_control_enabled = false;
+  createForm.profit_min_margin_percent = 0;
+  createForm.profit_safety_buffer_percent = 0;
   createForm.claude_code_only = false;
   createForm.fallback_group_id = null;
   createForm.fallback_group_id_on_invalid_request = null;
@@ -5485,6 +5681,19 @@ const normalizeRateMultiplier = (
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
 };
 
+// 利润控制表单辅助（换算与校验逻辑见 groupsProfitControl.ts，便于单测）。
+const percentToDecimal = profitPercentToDecimal;
+const decimalToPercent = profitDecimalToPercent;
+
+const validateProfitControlForm = (form: ProfitControlFormState): boolean => {
+  const errorKey = validateProfitControlFormState(form);
+  if (errorKey) {
+    appStore.showError(t(`admin.groups.profitControl.${errorKey}`));
+    return false;
+  }
+  return true;
+};
+
 const handleCreateGroup = async () => {
   if (!createForm.name.trim()) {
     appStore.showError(t("admin.groups.nameRequired"));
@@ -5495,6 +5704,9 @@ const handleCreateGroup = async () => {
     createReasoningEffortPolicyRef.value &&
     !createReasoningEffortPolicyRef.value.validate()
   ) {
+    return;
+  }
+  if (!validateProfitControlForm(createForm)) {
     return;
   }
   submitting.value = true;
@@ -5532,7 +5744,17 @@ const handleCreateGroup = async () => {
       reasoning_effort_mappings: reasoningEffortMappingsToAPI(
         createForm.reasoning_effort_mappings,
       ),
+      // 利润控制：界面百分比转小数提交；仅五个 token 平台可启用
+      profit_control_enabled:
+        isProfitControlPlatform(createForm.platform) &&
+        createForm.profit_control_enabled,
+      profit_min_margin: percentToDecimal(createForm.profit_min_margin_percent),
+      profit_safety_buffer: percentToDecimal(
+        createForm.profit_safety_buffer_percent,
+      ),
     };
+    delete (requestData as Record<string, unknown>).profit_min_margin_percent;
+    delete (requestData as Record<string, unknown>).profit_safety_buffer_percent;
     // v-model.number 清空输入框时产生 ""，转为 null 让后端设为无限制
     const emptyToNull = (v: any) => (v === "" ? null : v);
     requestData.daily_limit_usd = emptyToNull(requestData.daily_limit_usd);
@@ -5562,9 +5784,13 @@ const handleCreateGroup = async () => {
     requestData.web_search_price_per_call = emptyToNull(
       requestData.web_search_price_per_call,
     );
-    requestData.rate_time_rules = normalizeRateTimeRules(
-      createForm.rate_time_rules,
+    requestData.peak_rate_enabled = createForm.peak_rate_enabled;
+    requestData.peak_start = createForm.peak_start;
+    requestData.peak_end = createForm.peak_end;
+    requestData.peak_rate_multiplier = normalizeRateMultiplier(
+      createForm.peak_rate_multiplier,
     );
+    requestData.rate_time_rules = normalizeRateTimeRules(createForm.rate_time_rules);
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
     closeCreateModal();
@@ -5613,23 +5839,30 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.video_price_720p = group.video_price_720p;
   editForm.video_price_1080p = group.video_price_1080p;
   editForm.web_search_price_per_call = group.web_search_price_per_call ?? null;
-  editForm.rate_time_rules = (group.rate_time_rules ?? []).map((rule) => ({
-    ...rule,
-  }));
+  editForm.peak_rate_enabled = group.peak_rate_enabled ?? false;
+  editForm.peak_start = group.peak_start ?? "";
+  editForm.peak_end = group.peak_end ?? "";
+  editForm.peak_rate_multiplier = group.peak_rate_multiplier ?? 1.0;
+  editForm.rate_time_rules = (group.rate_time_rules ?? []).map((rule) => ({ ...rule }));
   if (
     editForm.rate_time_rules.length === 0 &&
     group.peak_rate_enabled &&
     group.peak_start &&
     group.peak_end
   ) {
-    editForm.rate_time_rules = [
-      {
-        start: group.peak_start,
-        end: group.peak_end,
-        multiplier: group.peak_rate_multiplier ?? 1,
-      },
-    ];
+    editForm.rate_time_rules = [{
+      start: group.peak_start,
+      end: group.peak_end,
+      multiplier: group.peak_rate_multiplier ?? 1,
+    }];
   }
+  editForm.profit_control_enabled = group.profit_control_enabled ?? false;
+  editForm.profit_min_margin_percent = decimalToPercent(
+    group.profit_min_margin ?? 0,
+  );
+  editForm.profit_safety_buffer_percent = decimalToPercent(
+    group.profit_safety_buffer ?? 0,
+  );
   editForm.claude_code_only = group.claude_code_only || false;
   editForm.fallback_group_id = group.fallback_group_id;
   editForm.fallback_group_id_on_invalid_request =
@@ -5686,7 +5919,14 @@ const closeEditModal = () => {
   editReasoningEffortPolicyRef.value?.resetValidation();
   editModelRoutingRules.value = [];
   editForm.copy_accounts_from_group_ids = [];
+  editForm.peak_rate_enabled = false;
+  editForm.peak_start = "";
+  editForm.peak_end = "";
+  editForm.peak_rate_multiplier = 1.0;
   editForm.rate_time_rules = [];
+  editForm.profit_control_enabled = false;
+  editForm.profit_min_margin_percent = 0;
+  editForm.profit_safety_buffer_percent = 0;
   editForm.video_rate_independent = false;
   editForm.video_rate_multiplier = 1;
   editForm.video_price_480p = null;
@@ -5711,13 +5951,15 @@ const handleUpdateGroup = async () => {
   ) {
     return;
   }
+  if (!validateProfitControlForm(editForm)) {
+    return;
+  }
 
   submitting.value = true;
   try {
     // 转换 fallback_group_id: null -> 0 (后端使用 0 表示清除)
     const payload = {
       ...editForm,
-      peak_rate_enabled: false,
       daily_limit_usd: normalizeOptionalLimit(
         editForm.daily_limit_usd as number | string | null,
       ),
@@ -5754,7 +5996,17 @@ const handleUpdateGroup = async () => {
       reasoning_effort_mappings: reasoningEffortMappingsToAPI(
         editForm.reasoning_effort_mappings,
       ),
+      // 利润控制：界面百分比转小数提交；仅五个 token 平台可启用
+      profit_control_enabled:
+        isProfitControlPlatform(editForm.platform) &&
+        editForm.profit_control_enabled,
+      profit_min_margin: percentToDecimal(editForm.profit_min_margin_percent),
+      profit_safety_buffer: percentToDecimal(
+        editForm.profit_safety_buffer_percent,
+      ),
     };
+    delete (payload as Record<string, unknown>).profit_min_margin_percent;
+    delete (payload as Record<string, unknown>).profit_safety_buffer_percent;
     // v-model.number 清空输入框时产生 ""，转为 null 让后端设为无限制
     const emptyToNull = (v: any) => (v === "" ? null : v);
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);
@@ -5785,6 +6037,12 @@ const handleUpdateGroup = async () => {
     payload.video_price_1080p = emptyPriceToClear(payload.video_price_1080p);
     payload.web_search_price_per_call = emptyPriceToClear(
       payload.web_search_price_per_call,
+    );
+    payload.peak_rate_enabled = editForm.peak_rate_enabled;
+    payload.peak_start = editForm.peak_start;
+    payload.peak_end = editForm.peak_end;
+    payload.peak_rate_multiplier = normalizeRateMultiplier(
+      editForm.peak_rate_multiplier,
     );
     payload.rate_time_rules = normalizeRateTimeRules(editForm.rate_time_rules);
     await adminAPI.groups.update(editingGroup.value.id, payload);
@@ -6058,13 +6316,31 @@ const confirmDelete = async () => {
   }
 };
 
-// 监听 subscription_type 变化，订阅模式时 is_exclusive 默认为 true。
+// 监听 subscription_type 变化，订阅模式时 is_exclusive 默认为 true；标准模式清空高峰配置
 watch(
   () => createForm.subscription_type,
   (newVal) => {
     if (newVal === "subscription") {
       createForm.is_exclusive = true;
       createForm.fallback_group_id_on_invalid_request = null;
+    } else {
+      createForm.peak_rate_enabled = false;
+      createForm.peak_start = "";
+      createForm.peak_end = "";
+      createForm.peak_rate_multiplier = 1.0;
+    }
+  },
+);
+
+// 编辑表单：切回标准模式时清空高峰配置，避免残留随更新请求提交被后端拒绝
+watch(
+  () => editForm.subscription_type,
+  (newVal) => {
+    if (newVal !== "subscription") {
+      editForm.peak_rate_enabled = false;
+      editForm.peak_start = "";
+      editForm.peak_end = "";
+      editForm.peak_rate_multiplier = 1.0;
     }
   },
 );
@@ -6078,6 +6354,11 @@ watch(
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(createForm);
       createForm.allow_live = false;
+    }
+    if (!isProfitControlPlatform(newVal)) {
+      createForm.profit_control_enabled = false;
+      createForm.profit_min_margin_percent = 0;
+      createForm.profit_safety_buffer_percent = 0;
     }
     createForm.max_reasoning_effort = normalizeReasoningEffortForPlatform(
       newVal,
@@ -6121,6 +6402,11 @@ watch(
     if (newVal !== "openai") {
       resetMessagesDispatchFormState(editForm);
       editForm.allow_live = false;
+    }
+    if (!isProfitControlPlatform(newVal)) {
+      editForm.profit_control_enabled = false;
+      editForm.profit_min_margin_percent = 0;
+      editForm.profit_safety_buffer_percent = 0;
     }
     editForm.max_reasoning_effort = normalizeReasoningEffortForPlatform(
       newVal,
