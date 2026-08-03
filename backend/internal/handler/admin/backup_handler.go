@@ -3,6 +3,7 @@ package admin
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -295,7 +296,11 @@ func (h *BackupHandler) ProxyDownload(c *gin.Context) {
 	}
 
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
-	c.Header("Content-Type", "application/octet-stream")
+	if strings.HasSuffix(strings.ToLower(fileName), ".zip") {
+		c.Header("Content-Type", "application/zip")
+	} else {
+		c.Header("Content-Type", "application/octet-stream")
+	}
 	c.Status(http.StatusOK)
 
 	if _, err := h.backupService.StreamDownload(c.Request.Context(), backupID, c.Writer); err != nil {

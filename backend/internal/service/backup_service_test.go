@@ -3,7 +3,9 @@
 package service
 
 import (
+	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -159,21 +161,26 @@ func (d *blockingDumper) Restore(_ context.Context, data io.Reader) error {
 }
 
 type mockObjectStore struct {
-	objects map[string][]byte
-	mu      sync.Mutex
+	objects     map[string][]byte
+	contentType map[string]string
+	mu          sync.Mutex
 }
 
 func newMockObjectStore() *mockObjectStore {
-	return &mockObjectStore{objects: make(map[string][]byte)}
+	return &mockObjectStore{
+		objects:     make(map[string][]byte),
+		contentType: make(map[string]string),
+	}
 }
 
-func (m *mockObjectStore) Upload(_ context.Context, key string, body io.Reader, _ string) (int64, error) {
+func (m *mockObjectStore) Upload(_ context.Context, key string, body io.Reader, contentType string) (int64, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
 		return 0, err
 	}
 	m.mu.Lock()
 	m.objects[key] = data
+	m.contentType[key] = contentType
 	m.mu.Unlock()
 	return int64(len(data)), nil
 }
@@ -400,11 +407,24 @@ func TestBackupService_CreateBackup_Streaming(t *testing.T) {
 	require.Equal(t, "completed", record.Status)
 	require.Greater(t, record.SizeBytes, int64(0))
 	require.NotEmpty(t, record.S3Key)
+	require.True(t, strings.HasSuffix(record.FileName, ".zip"))
 
 	// 验证 S3 上确实有文件
 	store.mu.Lock()
 	require.Len(t, store.objects, 1)
+	archiveData := append([]byte(nil), store.objects[record.S3Key]...)
+	require.Equal(t, "application/zip", store.contentType[record.S3Key])
 	store.mu.Unlock()
+
+	archive, err := zip.NewReader(bytes.NewReader(archiveData), int64(len(archiveData)))
+	require.NoError(t, err)
+	require.Len(t, archive.File, 1)
+	entry, err := archive.File[0].Open()
+	require.NoError(t, err)
+	defer func() { _ = entry.Close() }()
+	entryData, err := io.ReadAll(entry)
+	require.NoError(t, err)
+	require.Equal(t, dumpContent, string(entryData))
 }
 
 func TestBackupService_CreateBackup_DumpFailure(t *testing.T) {
@@ -429,8 +449,26 @@ func TestBackupUploadErrorMessagePreservesUploadFailure(t *testing.T) {
 
 	require.Contains(t, message, "WebDAV PUT: status 500")
 	require.Contains(t, message, "storage driver rejected upload")
-	require.Contains(t, message, "gzip/dump also failed")
+	require.Contains(t, message, "zip/dump also failed")
 	require.Contains(t, message, "closed pipe")
+}
+
+func TestOpenBackupPayload_LegacyGzip(t *testing.T) {
+	const dumpContent = "-- legacy PostgreSQL dump\n"
+	var compressed bytes.Buffer
+	writer := gzip.NewWriter(&compressed)
+	_, err := writer.Write([]byte(dumpContent))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	payload, cleanup, err := openBackupPayload(bytes.NewReader(compressed.Bytes()), "legacy.sql.gz")
+	require.NoError(t, err)
+	defer cleanup()
+	defer func() { _ = payload.Close() }()
+
+	data, err := io.ReadAll(payload)
+	require.NoError(t, err)
+	require.Equal(t, dumpContent, string(data))
 }
 
 func TestBackupService_CreateBackup_NoS3Config(t *testing.T) {

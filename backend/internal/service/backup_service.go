@@ -1,12 +1,14 @@
 package service
 
 import (
+	"archive/zip"
 	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"sort"
 	"strings"
 	"sync"
@@ -600,7 +602,7 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 
 	now := time.Now()
 	backupID := uuid.New().String()[:8]
-	fileName := fmt.Sprintf("%s_%s.sql.gz", s.dbCfg.DBName, now.Format("20060102_150405"))
+	fileName := fmt.Sprintf("%s_%s.zip", s.dbCfg.DBName, now.Format("20060102_150405"))
 	s3Key := buildObjectKey(prefix, fileName)
 
 	var expiresAt string
@@ -619,7 +621,7 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 		ExpiresAt:   expiresAt,
 	}
 
-	// 流式执行: pg_dump -> gzip -> 对象存储上传
+	// 流式执行: pg_dump -> zip -> 对象存储上传
 	dumpReader, err := s.dumper.Dump(ctx)
 	if err != nil {
 		record.Status = "failed"
@@ -629,45 +631,25 @@ func (s *BackupService) CreateBackup(ctx context.Context, triggeredBy string, ex
 		return record, fmt.Errorf("pg_dump: %w", err)
 	}
 
-	// 使用 io.Pipe 将 gzip 压缩数据流式传递给 S3 上传
+	// 使用 io.Pipe 将 ZIP 压缩数据流式传递给对象存储上传
 	pr, pw := io.Pipe()
-	gzipDone := make(chan error, 1)
+	zipDone := make(chan error, 1)
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				pw.CloseWithError(fmt.Errorf("gzip goroutine panic: %v", r)) //nolint:errcheck
-				gzipDone <- fmt.Errorf("gzip goroutine panic: %v", r)
-			}
-		}()
-		gzWriter := gzip.NewWriter(pw)
-		var gzErr error
-		_, gzErr = io.Copy(gzWriter, dumpReader)
-		if closeErr := gzWriter.Close(); closeErr != nil && gzErr == nil {
-			gzErr = closeErr
-		}
-		if closeErr := dumpReader.Close(); closeErr != nil && gzErr == nil {
-			gzErr = closeErr
-		}
-		if gzErr != nil {
-			_ = pw.CloseWithError(gzErr)
-		} else {
-			_ = pw.Close()
-		}
-		gzipDone <- gzErr
+		writeBackupZIP(pw, dumpReader, strings.TrimSuffix(fileName, ".zip"), zipDone)
 	}()
 
-	contentType := "application/gzip"
+	contentType := "application/zip"
 	sizeBytes, err := objectStore.Upload(ctx, s3Key, pr, contentType)
 	if err != nil {
-		_ = pr.CloseWithError(err) // 确保 gzip goroutine 不会悬挂
-		gzErr := <-gzipDone        // 安全等待 gzip goroutine 完成
+		_ = pr.CloseWithError(err) // 确保 zip goroutine 不会悬挂
+		zipErr := <-zipDone        // 安全等待 zip goroutine 完成
 		record.Status = "failed"
-		record.ErrorMsg = backupUploadErrorMessage(err, gzErr)
+		record.ErrorMsg = backupUploadErrorMessage(err, zipErr)
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		_ = s.saveRecord(ctx, record)
 		return record, fmt.Errorf("backup upload: %w", err)
 	}
-	<-gzipDone // 确保 gzip goroutine 已退出
+	<-zipDone // 确保 zip goroutine 已退出
 
 	record.SizeBytes = sizeBytes
 	record.Status = "completed"
@@ -711,7 +693,7 @@ func (s *BackupService) StartBackup(ctx context.Context, triggeredBy string, exp
 
 	now := time.Now()
 	backupID := uuid.New().String()[:8]
-	fileName := fmt.Sprintf("%s_%s.sql.gz", s.dbCfg.DBName, now.Format("20060102_150405"))
+	fileName := fmt.Sprintf("%s_%s.zip", s.dbCfg.DBName, now.Format("20060102_150405"))
 	s3Key := buildObjectKey(prefix, fileName)
 
 	var expiresAt string
@@ -782,49 +764,29 @@ func (s *BackupService) executeBackup(record *BackupRecord, objectStore BackupOb
 		return
 	}
 
-	// 阶段2: gzip + upload
+	// 阶段2: zip + upload
 	record.Progress = "uploading"
 	_ = s.saveRecord(ctx, record)
 
 	pr, pw := io.Pipe()
-	gzipDone := make(chan error, 1)
+	zipDone := make(chan error, 1)
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				pw.CloseWithError(fmt.Errorf("gzip goroutine panic: %v", r)) //nolint:errcheck
-				gzipDone <- fmt.Errorf("gzip goroutine panic: %v", r)
-			}
-		}()
-		gzWriter := gzip.NewWriter(pw)
-		var gzErr error
-		_, gzErr = io.Copy(gzWriter, dumpReader)
-		if closeErr := gzWriter.Close(); closeErr != nil && gzErr == nil {
-			gzErr = closeErr
-		}
-		if closeErr := dumpReader.Close(); closeErr != nil && gzErr == nil {
-			gzErr = closeErr
-		}
-		if gzErr != nil {
-			_ = pw.CloseWithError(gzErr)
-		} else {
-			_ = pw.Close()
-		}
-		gzipDone <- gzErr
+		writeBackupZIP(pw, dumpReader, strings.TrimSuffix(record.FileName, ".zip"), zipDone)
 	}()
 
-	contentType := "application/gzip"
+	contentType := "application/zip"
 	sizeBytes, err := objectStore.Upload(ctx, record.S3Key, pr, contentType)
 	if err != nil {
-		_ = pr.CloseWithError(err) // 确保 gzip goroutine 不会悬挂
-		gzErr := <-gzipDone        // 安全等待 gzip goroutine 完成
+		_ = pr.CloseWithError(err) // 确保 zip goroutine 不会悬挂
+		zipErr := <-zipDone        // 安全等待 zip goroutine 完成
 		record.Status = "failed"
-		record.ErrorMsg = backupUploadErrorMessage(err, gzErr)
+		record.ErrorMsg = backupUploadErrorMessage(err, zipErr)
 		record.Progress = ""
 		record.FinishedAt = time.Now().Format(time.RFC3339)
 		_ = s.saveRecord(context.Background(), record)
 		return
 	}
-	<-gzipDone // 确保 gzip goroutine 已退出
+	<-zipDone // 确保 zip goroutine 已退出
 
 	record.SizeBytes = sizeBytes
 	record.Status = "completed"
@@ -835,12 +797,44 @@ func (s *BackupService) executeBackup(record *BackupRecord, objectStore BackupOb
 	}
 }
 
-func backupUploadErrorMessage(uploadErr, gzipErr error) string {
+func backupUploadErrorMessage(uploadErr, archiveErr error) string {
 	message := fmt.Sprintf("backup upload failed: %v", uploadErr)
-	if gzipErr != nil {
-		message += fmt.Sprintf("; gzip/dump also failed: %v", gzipErr)
+	if archiveErr != nil {
+		message += fmt.Sprintf("; zip/dump also failed: %v", archiveErr)
 	}
 	return message
+}
+
+// writeBackupZIP packages the pg_dump stream into a single SQL entry without
+// buffering the dump in memory.
+func writeBackupZIP(pw *io.PipeWriter, dumpReader io.ReadCloser, sqlFileName string, done chan<- error) {
+	var archiveErr error
+	defer func() {
+		_ = dumpReader.Close()
+		if r := recover(); r != nil {
+			archiveErr = fmt.Errorf("zip goroutine panic: %v", r)
+			_ = pw.CloseWithError(archiveErr)
+		}
+		done <- archiveErr
+	}()
+
+	zipWriter := zip.NewWriter(pw)
+	entry, err := zipWriter.Create(sqlFileName)
+	if err == nil {
+		_, err = io.Copy(entry, dumpReader)
+	}
+	if closeErr := dumpReader.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if closeErr := zipWriter.Close(); closeErr != nil && err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		archiveErr = err
+		_ = pw.CloseWithError(err)
+		return
+	}
+	archiveErr = pw.Close()
 }
 
 // RestoreBackup 从 S3 下载备份并流式恢复到数据库
@@ -871,26 +865,7 @@ func (s *BackupService) RestoreBackup(ctx context.Context, backupID string) erro
 		return err
 	}
 
-	// 从对象存储流式下载
-	body, err := objectStore.Download(ctx, record.S3Key)
-	if err != nil {
-		return fmt.Errorf("S3 download failed: %w", err)
-	}
-	defer func() { _ = body.Close() }()
-
-	// 流式解压 gzip -> psql（不将全部数据加载到内存）
-	gzReader, err := gzip.NewReader(body)
-	if err != nil {
-		return fmt.Errorf("gzip reader: %w", err)
-	}
-	defer func() { _ = gzReader.Close() }()
-
-	// 流式恢复
-	if err := s.dumper.Restore(ctx, gzReader); err != nil {
-		return fmt.Errorf("pg restore: %w", err)
-	}
-
-	return nil
+	return s.restoreBackupData(ctx, record, objectStore)
 }
 
 // StartRestore 异步恢复备份，立即返回
@@ -963,27 +938,9 @@ func (s *BackupService) executeRestore(record *BackupRecord, objectStore BackupO
 	ctx, cancel := context.WithTimeout(s.bgCtx, 30*time.Minute)
 	defer cancel()
 
-	body, err := objectStore.Download(ctx, record.S3Key)
-	if err != nil {
+	if err := s.restoreBackupData(ctx, record, objectStore); err != nil {
 		record.RestoreStatus = "failed"
-		record.RestoreError = fmt.Sprintf("S3 download failed: %v", err)
-		_ = s.saveRecord(context.Background(), record)
-		return
-	}
-	defer func() { _ = body.Close() }()
-
-	gzReader, err := gzip.NewReader(body)
-	if err != nil {
-		record.RestoreStatus = "failed"
-		record.RestoreError = fmt.Sprintf("gzip reader: %v", err)
-		_ = s.saveRecord(context.Background(), record)
-		return
-	}
-	defer func() { _ = gzReader.Close() }()
-
-	if err := s.dumper.Restore(ctx, gzReader); err != nil {
-		record.RestoreStatus = "failed"
-		record.RestoreError = fmt.Sprintf("pg restore: %v", err)
+		record.RestoreError = err.Error()
 		_ = s.saveRecord(context.Background(), record)
 		return
 	}
@@ -993,6 +950,86 @@ func (s *BackupService) executeRestore(record *BackupRecord, objectStore BackupO
 	if err := s.saveRecord(context.Background(), record); err != nil {
 		logger.LegacyPrintf("service.backup", "[Backup] 保存恢复记录失败: %v", err)
 	}
+}
+
+func (s *BackupService) restoreBackupData(ctx context.Context, record *BackupRecord, objectStore BackupObjectStore) error {
+	body, err := objectStore.Download(ctx, record.S3Key)
+	if err != nil {
+		return fmt.Errorf("S3 download failed: %w", err)
+	}
+	defer func() { _ = body.Close() }()
+
+	payload, cleanup, err := openBackupPayload(body, record.FileName)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+	defer func() { _ = payload.Close() }()
+
+	if err := s.dumper.Restore(ctx, payload); err != nil {
+		return fmt.Errorf("pg restore: %w", err)
+	}
+	return nil
+}
+
+// openBackupPayload supports new ZIP backups and keeps existing .sql.gz
+// records restorable after the format migration.
+func openBackupPayload(body io.Reader, fileName string) (io.ReadCloser, func(), error) {
+	lowerName := strings.ToLower(fileName)
+	if strings.HasSuffix(lowerName, ".gz") {
+		gzReader, err := gzip.NewReader(body)
+		if err != nil {
+			return nil, func() {}, fmt.Errorf("gzip reader: %w", err)
+		}
+		return gzReader, func() {}, nil
+	}
+	if !strings.HasSuffix(lowerName, ".zip") {
+		return nil, func() {}, fmt.Errorf("unsupported backup archive format: %s", fileName)
+	}
+
+	tmp, err := os.CreateTemp("", "sub2api-backup-*.zip")
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("create backup archive temp file: %w", err)
+	}
+	tmpPath := tmp.Name()
+	cleanup := func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+	}
+
+	if _, err := io.Copy(tmp, body); err != nil {
+		cleanup()
+		return nil, func() {}, fmt.Errorf("stage backup archive: %w", err)
+	}
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, func() {}, fmt.Errorf("rewind backup archive: %w", err)
+	}
+	info, err := tmp.Stat()
+	if err != nil {
+		cleanup()
+		return nil, func() {}, fmt.Errorf("stat backup archive: %w", err)
+	}
+
+	archive, err := zip.NewReader(tmp, info.Size())
+	if err != nil {
+		cleanup()
+		return nil, func() {}, fmt.Errorf("zip reader: %w", err)
+	}
+	for _, entry := range archive.File {
+		if entry.FileInfo().IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name), ".sql") {
+			continue
+		}
+		payload, err := entry.Open()
+		if err != nil {
+			cleanup()
+			return nil, func() {}, fmt.Errorf("open SQL entry in zip: %w", err)
+		}
+		return payload, cleanup, nil
+	}
+
+	cleanup()
+	return nil, func() {}, fmt.Errorf("zip archive contains no SQL entry")
 }
 
 // ─── 备份记录管理 ───
@@ -1082,8 +1119,8 @@ func (s *BackupService) GetBackupDownloadURL(ctx context.Context, backupID strin
 	return url, nil
 }
 
-// StreamDownload 将备份文件内容（已解压 gzip）写入 w，供后端代理下载使用。
-// 返回原始文件名（不含 .gz），调用方设置 Content-Disposition。
+// StreamDownload 将备份文件内容写入 w，供 WebDAV 后端代理下载使用。
+// 新 ZIP 备份按原格式下载；旧 .sql.gz 备份保持兼容，下载为解压后的 SQL。
 func (s *BackupService) StreamDownload(ctx context.Context, backupID string, w io.Writer) (fileName string, err error) {
 	record, err := s.GetBackupRecord(ctx, backupID)
 	if err != nil {
@@ -1104,22 +1141,22 @@ func (s *BackupService) StreamDownload(ctx context.Context, backupID string, w i
 	}
 	defer func() { _ = body.Close() }()
 
-	gzReader, err := gzip.NewReader(body)
-	if err != nil {
-		return "", fmt.Errorf("gzip reader: %w", err)
+	if strings.HasSuffix(strings.ToLower(record.FileName), ".gz") {
+		gzReader, err := gzip.NewReader(body)
+		if err != nil {
+			return "", fmt.Errorf("gzip reader: %w", err)
+		}
+		defer func() { _ = gzReader.Close() }()
+		if _, err := io.Copy(w, gzReader); err != nil {
+			return "", fmt.Errorf("stream backup: %w", err)
+		}
+		return strings.TrimSuffix(record.FileName, ".gz"), nil
 	}
-	defer func() { _ = gzReader.Close() }()
 
-	if _, err := io.Copy(w, gzReader); err != nil {
+	if _, err := io.Copy(w, body); err != nil {
 		return "", fmt.Errorf("stream backup: %w", err)
 	}
-
-	// 去掉 .gz 后缀返回文件名
-	name := record.FileName
-	if strings.HasSuffix(name, ".gz") {
-		name = name[:len(name)-3]
-	}
-	return name, nil
+	return record.FileName, nil
 }
 
 // ─── 内部方法 ───

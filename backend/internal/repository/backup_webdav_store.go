@@ -42,7 +42,7 @@ func NewWebDAVBackupStore(cfg *service.BackupWebDAVConfig) *WebDAVBackupStore {
 
 // fullURL builds the absolute URL for the given object key.
 func (s *WebDAVBackupStore) fullURL(key string) string {
-	// key 由 buildS3Key 生成，如 "backups/2026/07/27/dbname_20260727_150405.sql.gz"
+	// key 由 buildObjectKey 生成，如 "backups/2026/07/27/dbname_20260727_150405.zip"
 	// 去掉首尾斜杠再拼，避免双斜杠
 	return s.baseURL + strings.TrimLeft(key, "/")
 }
