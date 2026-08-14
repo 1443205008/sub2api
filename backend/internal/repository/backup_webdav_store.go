@@ -140,6 +140,18 @@ func (s *WebDAVBackupStore) Upload(ctx context.Context, key string, body io.Read
 	return sizeBytes, nil
 }
 
+// UploadFile uploads a local file through the same staged, fixed-length PUT
+// path as Upload. WebDAV servers commonly reject chunked PUT requests, so the
+// shared implementation deliberately sets Content-Length before sending.
+func (s *WebDAVBackupStore) UploadFile(ctx context.Context, key string, filePath string, contentType string) (int64, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return 0, fmt.Errorf("open WebDAV upload file: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+	return s.Upload(ctx, key, file, contentType)
+}
+
 // Download fetches the file and returns a streaming reader.
 func (s *WebDAVBackupStore) Download(ctx context.Context, key string) (io.ReadCloser, error) {
 	resp, err := s.doRequest(ctx, "GET", s.fullURL(key), nil, "")
