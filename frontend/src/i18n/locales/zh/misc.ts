@@ -414,7 +414,7 @@ export default {
     amountTooLow: '最低金额为 {min}',
     amountTooHigh: '最高金额为 {max}',
     amountNoMethod: '该金额没有可用的支付方式',
-    rechargeRatePreview: '当前倍率：1 CNY = {usd} USD',
+    rechargeRatePreview: '当前倍率：1 {currency} = {usd} USD',
     rechargeBonus: '充值赠送',
     rechargeBonusTiers: '充值赠送档位',
     rechargeBonusTier: '满 {amount} 赠 {rate}%',

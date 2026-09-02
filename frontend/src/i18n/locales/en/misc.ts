@@ -390,7 +390,7 @@ export default {
     amountTooLow: 'Minimum amount is {min}',
     amountTooHigh: 'Maximum amount is {max}',
     amountNoMethod: 'No payment method available for this amount',
-    rechargeRatePreview: 'Current rate: 1 CNY = {usd} USD',
+    rechargeRatePreview: 'Current rate: 1 {currency} = {usd} USD',
     rechargeBonus: 'Recharge Bonus',
     rechargeBonusTiers: 'Recharge Bonus Tiers',
     rechargeBonusTier: '{rate}% bonus from {amount}',
