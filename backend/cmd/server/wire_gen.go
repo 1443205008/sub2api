@@ -211,7 +211,7 @@ func initializeApplication(buildInfo handler.BuildInfo) (*Application, error) {
 	dataManagementHandler := admin.NewDataManagementHandler(dataManagementService)
 	backupObjectStoreFactory := repository.NewS3BackupStoreFactory()
 	backupWebDAVStoreFactory := repository.NewWebDAVBackupStoreFactory()
-	dbDumper := repository.NewPgDumper(configConfig)
+	dbDumper := repository.NewPgDumper(configConfig, db)
 	backupService := service.ProvideBackupService(settingRepository, configConfig, secretEncryptor, backupObjectStoreFactory, backupWebDAVStoreFactory, dbDumper, leaderLockCache, db)
 	imageStorageFactory := repository.ProvideImageStorageFactory()
 	imageStorageSettingService := service.ProvideImageStorageSettingService(settingRepository, secretEncryptor, backupService, imageStorageFactory, configConfig)
