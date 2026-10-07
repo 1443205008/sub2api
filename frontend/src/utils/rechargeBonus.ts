@@ -85,7 +85,7 @@ function collectTiers(candidates: { min_amount: unknown; bonus_percent: unknown 
     const key = minAmountKey(minAmount)
     if (seen.has(key)) continue
     seen.add(key)
-    out.push({ min_amount: minAmount, bonus_percent: percent })
+    out.push({ min_amount: minAmount, bonus_rate: percent, bonus_percent: percent })
   }
   out.sort((a, b) => a.min_amount - b.min_amount)
   return out

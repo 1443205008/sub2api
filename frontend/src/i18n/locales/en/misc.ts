@@ -403,7 +403,6 @@ export default {
     amountTooHigh: 'Maximum amount is {max}',
     amountNoMethod: 'No payment method available for this amount',
     rechargeRatePreview: 'Current rate: 1 {currency} = {usd} USD',
-    rechargeBonus: 'Recharge Bonus',
     rechargeBonusTiers: 'Recharge Bonus Tiers',
     rechargeBonusTier: '{rate}% bonus from {amount}',
     refundReason: 'Refund Reason',

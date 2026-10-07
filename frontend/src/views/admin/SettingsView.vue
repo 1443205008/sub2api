@@ -9977,11 +9977,10 @@ const form = reactive<SettingsForm>({
   payment_balance_disabled: false,
   payment_balance_recharge_multiplier: 1,
   payment_recharge_bonus_tiers: [],
-  payment_subscription_usd_to_cny_rate: 0,
-  payment_recharge_fee_rate: 0,
-  payment_recharge_bonus_tiers: [],
   payment_recharge_bonus_mode: "bonus",
   payment_recharge_bonus_notice: "",
+  payment_subscription_usd_to_cny_rate: 0,
+  payment_recharge_fee_rate: 0,
   payment_enabled_types: [],
   payment_help_image_url: "",
   payment_help_text: "",
@@ -11183,6 +11182,7 @@ function addRechargeBonusTier(): void {
   form.payment_recharge_bonus_tiers.push({
     min_amount: (lastTier?.min_amount || 0) + 100,
     bonus_rate: lastTier?.bonus_rate || 10,
+    bonus_percent: lastTier?.bonus_percent || 10,
   });
 }
 
@@ -11225,6 +11225,7 @@ async function loadSettings() {
       ? settings.payment_recharge_bonus_tiers.map((tier) => ({
           min_amount: Number(tier.min_amount) || 0,
           bonus_rate: Number(tier.bonus_rate) || 0,
+          bonus_percent: Number(tier.bonus_percent) || 0,
       }))
       : [];
     // For this optional override, null explicitly selects per-account rates.
@@ -11886,18 +11887,12 @@ async function saveSettings() {
       payment_balance_disabled: form.payment_balance_disabled,
       payment_balance_recharge_multiplier:
         Number(form.payment_balance_recharge_multiplier) || 1,
-      payment_recharge_bonus_tiers: form.payment_recharge_bonus_tiers.map(
-        (tier) => ({
-          min_amount: Number(tier.min_amount),
-          bonus_rate: Number(tier.bonus_rate),
-        }),
+      payment_recharge_bonus_tiers: sanitizeRechargeBonusTiersForSubmit(
+        form.payment_recharge_bonus_tiers,
       ),
       payment_subscription_usd_to_cny_rate:
         Number(form.payment_subscription_usd_to_cny_rate) || 0,
       payment_recharge_fee_rate: Number(form.payment_recharge_fee_rate) || 0,
-      payment_recharge_bonus_tiers: sanitizeRechargeBonusTiersForSubmit(
-        form.payment_recharge_bonus_tiers,
-      ),
       payment_recharge_bonus_mode: form.payment_recharge_bonus_mode,
       payment_recharge_bonus_notice: form.payment_recharge_bonus_notice,
       payment_enabled_types: form.payment_enabled_types,
