@@ -2,11 +2,9 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -27,7 +25,6 @@ const (
 	SettingLoadBalanceStrategy = "LOAD_BALANCE_STRATEGY"
 	SettingBalancePayDisabled  = "BALANCE_PAYMENT_DISABLED"
 	SettingBalanceRechargeMult = "BALANCE_RECHARGE_MULTIPLIER"
-	SettingRechargeBonusTiers  = "RECHARGE_BONUS_TIERS"
 	// SettingSubscriptionUSDToCNYRate 是订阅 CNY 换算汇率（1 USD = X CNY）。
 	// 0/未配置 = 关闭换算（订阅按 price 数值直付），显式配置后 CNY 通道订阅按 price × rate 收款。
 	SettingSubscriptionUSDToCNYRate      = "SUBSCRIPTION_USD_TO_CNY_RATE"
@@ -62,7 +59,6 @@ type PaymentConfig struct {
 	EnabledTypes              []string            `json:"enabled_payment_types"`
 	BalanceDisabled           bool                `json:"balance_disabled"`
 	BalanceRechargeMultiplier float64             `json:"balance_recharge_multiplier"`
-	RechargeBonusTiers        []RechargeBonusTier `json:"recharge_bonus_tiers"`
 	// SubscriptionUSDToCNYRate 为 0 时订阅换算关闭（兼容存量行为）。
 	SubscriptionUSDToCNYRate float64 `json:"subscription_usd_to_cny_rate"`
 	RechargeFeeRate          float64 `json:"recharge_fee_rate"`
@@ -90,13 +86,6 @@ type PaymentConfig struct {
 	AlipayForceQRCode bool `json:"alipay_force_qrcode"`
 	// Use Alipay face-to-face precreate and an app deep link on mobile clients.
 	AlipayMobilePrecreateDeepLink bool `json:"alipay_mobile_precreate_deep_link"`
-}
-
-// RechargeBonusTier grants an additional percentage when a single balance
-// recharge reaches MinAmount. The highest matching tier applies.
-type RechargeBonusTier struct {
-	MinAmount float64 `json:"min_amount"`
-	BonusRate float64 `json:"bonus_rate"`
 }
 
 // UpdatePaymentConfigRequest contains fields to update payment configuration.
@@ -270,7 +259,6 @@ func (s *PaymentConfigService) parsePaymentConfig(vals map[string]string) *Payme
 		MaxPendingOrders:          pcParseInt(vals[SettingMaxPendingOrders], defaultMaxPendingOrders),
 		BalanceDisabled:           vals[SettingBalancePayDisabled] == "true",
 		BalanceRechargeMultiplier: normalizeBalanceRechargeMultiplier(pcParseFloat(vals[SettingBalanceRechargeMult], defaultBalanceRechargeMultiplier)),
-		RechargeBonusTiers:        parseRechargeBonusTiers(vals[SettingRechargeBonusTiers]),
 		SubscriptionUSDToCNYRate:  normalizeSubscriptionUSDToCNYRate(pcParseFloat(vals[SettingSubscriptionUSDToCNYRate], 0)),
 		RechargeFeeRate:           pcParseFloat(vals[SettingRechargeFeeRate], 0),
 		RechargeBonusTiers:        parseRechargeBonusTiers(vals[SettingRechargeBonusTiers]),
@@ -466,53 +454,10 @@ func (s *PaymentConfigService) UpdatePaymentConfig(ctx context.Context, req Upda
 	if req.VisibleMethodWxpayEnabled != nil {
 		m[SettingPaymentVisibleMethodWxpayEnabled] = formatBoolOrEmpty(req.VisibleMethodWxpayEnabled)
 	}
-	if req.RechargeBonusTiers != nil {
-		m[SettingRechargeBonusTiers] = rechargeBonusTiersJSON
-	}
 	if req.EnabledTypes != nil {
 		m[SettingEnabledPaymentTypes] = strings.Join(req.EnabledTypes, ",")
 	}
 	return s.settingRepo.SetMultiple(ctx, m)
-}
-
-func parseRechargeBonusTiers(raw string) []RechargeBonusTier {
-	tiers := []RechargeBonusTier{}
-	if strings.TrimSpace(raw) == "" || json.Unmarshal([]byte(raw), &tiers) != nil {
-		return []RechargeBonusTier{}
-	}
-	normalized, err := normalizeRechargeBonusTiers(tiers)
-	if err != nil {
-		return []RechargeBonusTier{}
-	}
-	return normalized
-}
-
-func normalizeRechargeBonusTiers(tiers []RechargeBonusTier) ([]RechargeBonusTier, error) {
-	if len(tiers) > 50 {
-		return nil, infraerrors.BadRequest("INVALID_RECHARGE_BONUS_TIERS", "recharge bonus tiers cannot exceed 50 entries")
-	}
-	normalized := append([]RechargeBonusTier{}, tiers...)
-	for _, tier := range normalized {
-		if !isValidTwoDecimalValue(tier.MinAmount) || tier.MinAmount < 0 {
-			return nil, infraerrors.BadRequest("INVALID_RECHARGE_BONUS_TIERS", "tier minimum amount must be non-negative with at most 2 decimal places")
-		}
-		if !isValidTwoDecimalValue(tier.BonusRate) || tier.BonusRate <= 0 || tier.BonusRate > 100 {
-			return nil, infraerrors.BadRequest("INVALID_RECHARGE_BONUS_TIERS", "tier bonus rate must be between 0 and 100 with at most 2 decimal places")
-		}
-	}
-	sort.Slice(normalized, func(i, j int) bool {
-		return normalized[i].MinAmount < normalized[j].MinAmount
-	})
-	for i := 1; i < len(normalized); i++ {
-		if normalized[i-1].MinAmount == normalized[i].MinAmount {
-			return nil, infraerrors.BadRequest("INVALID_RECHARGE_BONUS_TIERS", "tier minimum amounts must be unique")
-		}
-	}
-	return normalized, nil
-}
-
-func isValidTwoDecimalValue(value float64) bool {
-	return !math.IsNaN(value) && !math.IsInf(value, 0) && math.Abs(math.Round(value*100)-value*100) < 1e-8
 }
 
 func formatBoolOrEmpty(v *bool) string {

@@ -38,7 +38,7 @@ func calculateRechargeBonusRate(paymentAmount float64, tiers []RechargeBonusTier
 	for _, tier := range tiers {
 		if paymentAmount >= tier.MinAmount && tier.MinAmount > matchedMinAmount {
 			matchedMinAmount = tier.MinAmount
-			bonusRate = tier.BonusRate
+			bonusRate = tier.BonusPercent
 		}
 	}
 	return bonusRate
