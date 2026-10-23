@@ -295,8 +295,8 @@ func TestCalculateCreditedBalanceWithBonusUsesHighestMatchingTier(t *testing.T) 
 	t.Parallel()
 
 	tiers := []RechargeBonusTier{
-		{MinAmount: 500, BonusRate: 20},
-		{MinAmount: 100, BonusRate: 10},
+		{MinAmount: 500, BonusPercent: 20},
+		{MinAmount: 100, BonusPercent: 10},
 	}
 	if got := calculateCreditedBalanceWithBonus(99.99, 0.14, tiers); got != 14 {
 		t.Fatalf("credited balance below first tier = %v, want 14", got)

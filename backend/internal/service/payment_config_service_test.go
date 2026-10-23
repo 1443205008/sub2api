@@ -243,29 +243,29 @@ func TestParsePaymentConfig(t *testing.T) {
 func TestRechargeBonusTiersAreSortedAndValidated(t *testing.T) {
 	t.Parallel()
 
-	parsed := parseRechargeBonusTiers(`[{"min_amount":500,"bonus_rate":20},{"min_amount":100,"bonus_rate":10}]`)
+	parsed := parseRechargeBonusTiers(`[{"min_amount":500,"bonus_percent":20},{"min_amount":100,"bonus_percent":10}]`)
 	if len(parsed) != 2 || parsed[0].MinAmount != 100 || parsed[1].MinAmount != 500 {
 		t.Fatalf("parsed tiers = %#v, want ascending minimum amounts", parsed)
 	}
 
-	invalid := []RechargeBonusTier{{MinAmount: 100, BonusRate: 10}, {MinAmount: 100, BonusRate: 20}}
-	if _, err := normalizeRechargeBonusTiers(invalid); err == nil {
+	invalid := []RechargeBonusTier{{MinAmount: 100, BonusPercent: 10}, {MinAmount: 100, BonusPercent: 20}}
+	if _, err := NormalizeRechargeBonusTiers(invalid); err == nil {
 		t.Fatal("expected duplicate minimum amounts to be rejected")
 	}
-	if _, err := normalizeRechargeBonusTiers([]RechargeBonusTier{{MinAmount: 100, BonusRate: 100.01}}); err == nil {
-		t.Fatal("expected bonus rate above 100 to be rejected")
+	if _, err := NormalizeRechargeBonusTiers([]RechargeBonusTier{{MinAmount: 100, BonusPercent: 1000.01}}); err == nil {
+		t.Fatal("expected bonus percent above the limit to be rejected")
 	}
 }
 
 func TestUpdatePaymentConfigPersistsRechargeBonusTiers(t *testing.T) {
 	repo := &paymentConfigSettingRepoStub{values: map[string]string{}}
 	svc := &PaymentConfigService{settingRepo: repo}
-	tiers := []RechargeBonusTier{{MinAmount: 500, BonusRate: 20}, {MinAmount: 100, BonusRate: 10}}
+	tiers := []RechargeBonusTier{{MinAmount: 500, BonusPercent: 20}, {MinAmount: 100, BonusPercent: 10}}
 
 	if err := svc.UpdatePaymentConfig(context.Background(), UpdatePaymentConfigRequest{RechargeBonusTiers: &tiers}); err != nil {
 		t.Fatalf("UpdatePaymentConfig returned error: %v", err)
 	}
-	if got := repo.values[SettingRechargeBonusTiers]; got != `[{"min_amount":100,"bonus_rate":10},{"min_amount":500,"bonus_rate":20}]` {
+	if got := repo.values[SettingRechargeBonusTiers]; got != `[{"min_amount":100,"bonus_percent":10},{"min_amount":500,"bonus_percent":20}]` {
 		t.Fatalf("stored tiers = %s", got)
 	}
 }
