@@ -1203,23 +1203,23 @@ describe("admin SettingsView payment visible method controls", () => {
     getSettings.mockResolvedValueOnce({
       ...baseSettingsResponse,
       payment_recharge_bonus_tiers: [
-        { min_amount: 100, bonus_rate: 10 },
-        { min_amount: 500, bonus_rate: 20 },
+        { min_amount: 100, bonus_percent: 10 },
+        { min_amount: 500, bonus_percent: 20 },
       ],
     });
     const wrapper = mountView();
 
     await flushPromises();
     await openPaymentTab(wrapper);
-    expect(wrapper.text()).toContain("admin.settings.payment.rechargeBonusTiers");
+    expect(wrapper.text()).toContain("admin.settings.payment.rechargeBonus.label");
     await wrapper.find("form").trigger("submit.prevent");
     await flushPromises();
 
     expect(updateSettings).toHaveBeenCalledWith(
       expect.objectContaining({
         payment_recharge_bonus_tiers: [
-          { min_amount: 100, bonus_rate: 10 },
-          { min_amount: 500, bonus_rate: 20 },
+          { min_amount: 100, bonus_percent: 10 },
+          { min_amount: 500, bonus_percent: 20 },
         ],
       }),
     );

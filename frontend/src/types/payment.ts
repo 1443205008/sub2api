@@ -25,10 +25,9 @@ export type OrderType = 'balance' | 'subscription'
 
 // ==================== Configuration ====================
 
-/** 充值赠送档位：支付金额 ≥ min_amount 时在到账基数上赠送 bonus_rate% */
+/** 充值赠送档位：支付金额 ≥ min_amount 时在到账基数上赠送 bonus_percent% */
 export interface RechargeBonusTier {
   min_amount: number
-  bonus_rate: number
   bonus_percent: number
 }
 

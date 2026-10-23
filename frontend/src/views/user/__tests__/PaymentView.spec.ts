@@ -409,8 +409,8 @@ describe('PaymentView recharge bonuses', () => {
     const wrapper = await mountRecharge({
       balance_recharge_multiplier: 0.14,
       recharge_bonus_tiers: [
-        { min_amount: 500, bonus_rate: 20 },
-        { min_amount: 100, bonus_rate: 10 },
+        { min_amount: 500, bonus_percent: 20 },
+        { min_amount: 100, bonus_percent: 10 },
       ],
     })
 
@@ -419,7 +419,7 @@ describe('PaymentView recharge bonuses', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.text()).toContain('$15.40')
-    expect(wrapper.text()).toContain('(10%)')
+    expect(translate).toHaveBeenCalledWith('payment.rechargeBonus.amountLabelWithPercent', { percent: '10' })
     expect(wrapper.text()).toContain('+$1.40')
   })
 })

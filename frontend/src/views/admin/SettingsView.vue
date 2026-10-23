@@ -8206,74 +8206,6 @@
                       }}
                     </p>
                   </div>
-                  <div class="sm:col-span-2">
-                    <div class="flex items-start justify-between gap-4">
-                      <div>
-                        <label class="input-label">{{
-                          t("admin.settings.payment.rechargeBonusTiers")
-                        }}</label>
-                        <p class="mt-0.5 text-xs text-gray-400">
-                          {{ t("admin.settings.payment.rechargeBonusTiersHint") }}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        class="btn btn-secondary btn-sm shrink-0"
-                        @click="addRechargeBonusTier"
-                      >
-                        <Icon name="plus" size="xs" />
-                        {{ t("admin.settings.payment.addRechargeBonusTier") }}
-                      </button>
-                    </div>
-                    <div
-                      v-if="form.payment_recharge_bonus_tiers.length === 0"
-                      class="mt-3 border-y border-dashed border-gray-200 py-4 text-center text-sm text-gray-400 dark:border-dark-600"
-                    >
-                      {{ t("admin.settings.payment.noRechargeBonusTiers") }}
-                    </div>
-                    <div v-else class="mt-3 space-y-2">
-                      <div
-                        v-for="(tier, index) in form.payment_recharge_bonus_tiers"
-                        :key="index"
-                        class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2.5rem] items-end gap-3"
-                      >
-                        <label class="min-w-0 text-xs text-gray-500 dark:text-gray-400">
-                          <span class="mb-1 block truncate">{{ t("admin.settings.payment.tierMinAmount") }}</span>
-                          <input
-                            v-model.number="tier.min_amount"
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            class="input"
-                            required
-                          />
-                        </label>
-                        <label class="min-w-0 text-xs text-gray-500 dark:text-gray-400">
-                          <span class="mb-1 block truncate">{{ t("admin.settings.payment.tierBonusRate") }}</span>
-                          <div class="relative">
-                            <input
-                              v-model.number="tier.bonus_rate"
-                              type="number"
-                              min="0.01"
-                              max="100"
-                              step="0.01"
-                              class="input pr-8"
-                              required
-                            />
-                            <span class="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-3 text-gray-400">%</span>
-                          </div>
-                        </label>
-                        <button
-                          type="button"
-                          class="btn btn-secondary flex h-10 w-10 items-center justify-center p-0 text-red-600"
-                          :title="t('admin.settings.payment.removeRechargeBonusTier')"
-                          @click="removeRechargeBonusTier(index)"
-                        >
-                          <Icon name="trash" size="sm" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
                   <div>
                     <label class="input-label">{{
                       t("admin.settings.payment.rechargeFeeRate")
@@ -11181,22 +11113,6 @@ function removeCodexWhitelistRow(i: number): void {
   codexWhitelistRows.value.splice(i, 1);
 }
 
-function addRechargeBonusTier(): void {
-  const sortedTiers = [...form.payment_recharge_bonus_tiers].sort(
-    (a, b) => a.min_amount - b.min_amount,
-  );
-  const lastTier = sortedTiers[sortedTiers.length - 1];
-  form.payment_recharge_bonus_tiers.push({
-    min_amount: (lastTier?.min_amount || 0) + 100,
-    bonus_rate: lastTier?.bonus_rate || 10,
-    bonus_percent: lastTier?.bonus_percent || 10,
-  });
-}
-
-function removeRechargeBonusTier(index: number): void {
-  form.payment_recharge_bonus_tiers.splice(index, 1);
-}
-
 const codexSyncedVersionLabel = computed(() => {
   const synced = form.openai_codex_client_version_synced?.trim();
   if (!synced) return "";
@@ -11226,15 +11142,6 @@ async function loadSettings() {
         (form as Record<string, unknown>)[key] = value;
       }
     }
-    form.payment_recharge_bonus_tiers = Array.isArray(
-      settings.payment_recharge_bonus_tiers,
-    )
-      ? settings.payment_recharge_bonus_tiers.map((tier) => ({
-          min_amount: Number(tier.min_amount) || 0,
-          bonus_rate: Number(tier.bonus_rate) || 0,
-          bonus_percent: Number(tier.bonus_percent) || 0,
-      }))
-      : [];
     // For this optional override, null explicitly selects per-account rates.
     if (settings.openai_oauth_scheduling_rate_multiplier === null) {
       form.openai_oauth_scheduling_rate_multiplier = null;

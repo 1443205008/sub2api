@@ -102,10 +102,6 @@
                   <span class="text-gray-500 dark:text-gray-400">{{ t('payment.creditedBalance') }}</span>
                   <span :class="bonusQuote.percent > 0 ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-900 dark:text-white'">${{ creditedAmount.toFixed(2) }}</span>
                 </div>
-                <div v-if="currentBonusRate > 0" class="flex justify-between text-green-600 dark:text-green-400">
-                  <span>{{ t('payment.rechargeBonus.amountLabelWithPercent', { percent: currentBonusRate }) }}</span>
-                  <span>+${{ bonusAmount.toFixed(2) }}</span>
-                </div>
                 <p v-if="balanceRechargeMultiplier !== 1" class="border-t border-gray-200 pt-2 text-xs text-gray-500 dark:border-dark-600 dark:text-gray-400">
                   {{ t('payment.rechargeRatePreview', { currency: selectedCurrency, usd: balanceRechargeMultiplier.toFixed(2) }) }}
                 </p>
@@ -117,7 +113,7 @@
                       :key="tier.min_amount"
                       class="rounded border border-green-200 bg-green-50 px-2 py-1 text-xs text-green-700 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300"
                     >
-                      {{ t('payment.rechargeBonusTier', { amount: tier.min_amount, rate: tier.bonus_rate }) }}
+                      {{ t('payment.rechargeBonusTier', { amount: tier.min_amount, rate: tier.bonus_percent }) }}
                     </span>
                   </div>
                 </div>
@@ -311,7 +307,7 @@ import { extractApiErrorMessage, extractI18nErrorMessage } from '@/utils/apiErro
 import { isMobileDevice } from '@/utils/device'
 import { hasPeakRate, formatPeakRateWindow, serverTimezoneLabel, type PeakRateFields } from '@/utils/peak-rate'
 import type { SubscriptionPlan, CheckoutInfoResponse, CreateOrderResult, OrderType } from '@/types/payment'
-import { formatRechargeBonusNumber, normalizeRechargeBonusMode, quoteRechargeBonus } from '@/utils/rechargeBonus'
+import { formatRechargeBonusNumber, normalizeRechargeBonusMode, normalizeRechargeBonusTiers, quoteRechargeBonus } from '@/utils/rechargeBonus'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import AmountInput from '@/components/payment/AmountInput.vue'
 import PaymentMethodSelector from '@/components/payment/PaymentMethodSelector.vue'
@@ -588,19 +584,7 @@ const balanceRechargeMultiplier = computed(() => {
   const multiplier = checkout.value.balance_recharge_multiplier
   return Number.isFinite(multiplier) && multiplier > 0 ? multiplier : 1
 })
-const rechargeBonusTiers = computed(() =>
-  [...(checkout.value.recharge_bonus_tiers || [])]
-    .filter(tier => Number.isFinite(tier.min_amount) && Number.isFinite(tier.bonus_rate))
-    .sort((a, b) => a.min_amount - b.min_amount)
-)
-const currentBonusRate = computed(() => {
-  let rate = 0
-  for (const tier of rechargeBonusTiers.value) {
-    if (validAmount.value < tier.min_amount) break
-    rate = tier.bonus_rate
-  }
-  return rate
-})
+const rechargeBonusTiers = computed(() => normalizeRechargeBonusTiers(checkout.value.recharge_bonus_tiers))
 // 订阅 CNY 换算汇率（1 USD = X CNY）。0 = 未配置，订阅保持 price 直付（与后端 opt-in 条件严格镜像）。
 const subscriptionUsdToCnyRate = computed(() => {
   const rate = checkout.value.subscription_usd_to_cny_rate
@@ -698,7 +682,6 @@ const bonusQuote = computed(() => quoteRechargeBonus(rechargeBonusTiers.value, v
 const payBaseAmount = computed(() => bonusQuote.value.payBase)
 const discountAmount = computed(() => roundPaymentAmount(validAmount.value - payBaseAmount.value, selectedCurrency.value))
 const creditedAmount = computed(() => bonusQuote.value.credited)
-const bonusAmount = computed(() => bonusQuote.value.bonus)
 const showBonusRow = computed(() => bonusQuote.value.mode !== 'discount' && bonusQuote.value.bonus > 0)
 const showCreditedBalance = computed(() => balanceRechargeMultiplier.value !== 1 || bonusQuote.value.percent > 0)
 
