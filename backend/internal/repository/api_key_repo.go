@@ -225,6 +225,16 @@ func (r *apiKeyRepository) GetByKeyForAuth(ctx context.Context, key string) (*se
 				group.FieldPeakStart,
 				group.FieldPeakEnd,
 				group.FieldPeakRateMultiplier,
+				// 多时段倍率规则（优先于 peak_*），缺席会让计费路径的 PeakMultiplierAt 静默失效。
+				group.FieldRateTimeRules,
+				// 分组利润控制：认证快照是调度门 enable 判定的直接来源，
+				// 漏选会让门静默失效；新增快照分组字段时必须同步本投影，
+				// 集成测试对账兜底。
+				group.FieldProfitControlEnabled,
+				group.FieldProfitMinMargin,
+				group.FieldProfitSafetyBuffer,
+				// OpenAI 选号从 ctx 分组读取隐私门，漏选会放行未设置隐私的账号。
+				group.FieldRequirePrivacySet,
 			)
 		}).
 		Only(ctx)
